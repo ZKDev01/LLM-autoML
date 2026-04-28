@@ -1,0 +1,924 @@
+{
+  "preprocessing_steps": [
+    {
+      "step": "imputer",
+      "name": "SimpleImputer",
+      "module": "sklearn.impute.SimpleImputer",
+      "hyperparameters": {
+        "strategy": {
+          "type": "categorical",
+          "search_space": ["mean", "most_frequent", "constant"]
+        },
+        "fill_value": {
+          "type": "categorical",
+          "search_space": [0, -1, "missing"],
+          "note": "Only when strategy='constant'"
+        }
+      }
+    },
+    {
+      "step": "imputer",
+      "name": "KNNImputer",
+      "module": "sklearn.impute.KNNImputer",
+      "hyperparameters": {
+        "n_neighbors": {
+          "type": "integer",
+          "search_space": [2, 10],
+          "suggested_values": [2, 5, 7, 10]
+        },
+        "weights": {
+          "type": "categorical",
+          "search_space": ["uniform", "distance"]
+        }
+      }
+    },
+    {
+      "step": "scaler",
+      "name": "StandardScaler",
+      "module": "sklearn.preprocessing.StandardScaler",
+      "hyperparameters": {
+        "with_mean": {
+          "type": "categorical",
+          "search_space": [true, false]
+        },
+        "with_std": {
+          "type": "categorical",
+          "search_space": [true, false]
+        }
+      }
+    },
+    {
+      "step": "scaler",
+      "name": "MinMaxScaler",
+      "module": "sklearn.preprocessing.MinMaxScaler",
+      "hyperparameters": {
+        "feature_range": {
+          "type": "tuple",
+          "search_space": [[0, 1], [-1, 1], [0, 2]]
+        }
+      }
+    },
+    {
+      "step": "scaler",
+      "name": "RobustScaler",
+      "module": "sklearn.preprocessing.RobustScaler",
+      "hyperparameters": {
+        "with_centering": {
+          "type": "categorical",
+          "search_space": [true, false]
+        },
+        "with_scaling": {
+          "type": "categorical",
+          "search_space": [true, false]
+        },
+        "quantile_range": {
+          "type": "categorical",
+          "search_space": [[25, 75], [10, 90], [5, 95]]
+        }
+      }
+    },
+    {
+      "step": "scaler",
+      "name": "MaxAbsScaler",
+      "module": "sklearn.preprocessing.MaxAbsScaler",
+      "hyperparameters": {}
+    },
+    {
+      "step": "scaler",
+      "name": "Normalizer",
+      "module": "sklearn.preprocessing.Normalizer",
+      "hyperparameters": {
+        "norm": {
+          "type": "categorical",
+          "search_space": ["l1", "l2", "max"]
+        }
+      }
+    },
+    {
+      "step": "encoder",
+      "name": "OneHotEncoder",
+      "module": "sklearn.preprocessing.OneHotEncoder",
+      "hyperparameters": {
+        "drop": {
+          "type": "categorical",
+          "search_space": [null, "first", "if_binary"]
+        },
+        "handle_unknown": {
+          "type": "categorical",
+          "search_space": ["error", "ignore", "infrequent_if_exist"]
+        },
+        "sparse_output": {
+          "type": "categorical",
+          "search_space": [true, false]
+        }
+      }
+    },
+    {
+      "step": "encoder",
+      "name": "OrdinalEncoder",
+      "module": "sklearn.preprocessing.OrdinalEncoder",
+      "hyperparameters": {
+        "handle_unknown": {
+          "type": "categorical",
+          "search_space": ["error", "use_encoded_value"]
+        },
+        "unknown_value": {
+          "type": "categorical",
+          "search_space": [null, -1],
+          "note": "Only when handle_unknown='use_encoded_value'"
+        }
+      }
+    },
+    {
+      "step": "transformer",
+      "name": "PowerTransformer",
+      "module": "sklearn.preprocessing.PowerTransformer",
+      "hyperparameters": {
+        "method": {
+          "type": "categorical",
+          "search_space": ["yeo-johnson", "box-cox"]
+        },
+        "standardize": {
+          "type": "categorical",
+          "search_space": [true, false]
+        }
+      }
+    },
+    {
+      "step": "transformer",
+      "name": "QuantileTransformer",
+      "module": "sklearn.preprocessing.QuantileTransformer",
+      "hyperparameters": {
+        "n_quantiles": {
+          "type": "integer",
+          "search_space": [100, 2000],
+          "suggested_values": [100, 500, 1000]
+        },
+        "output_distribution": {
+          "type": "categorical",
+          "search_space": ["uniform", "normal"]
+        }
+      }
+    },
+    {
+      "step": "transformer",
+      "name": "PolynomialFeatures",
+      "module": "sklearn.preprocessing.PolynomialFeatures",
+      "hyperparameters": {
+        "degree": {
+          "type": "integer",
+          "search_space": [2, 4],
+          "suggested_values": [2, 3]
+        },
+        "interaction_only": {
+          "type": "categorical",
+          "search_space": [true, false]
+        },
+        "include_bias": {
+          "type": "categorical",
+          "search_space": [true, false]
+        }
+      }
+    },
+    {
+      "step": "feature_selection",
+      "name": "SelectKBest",
+      "module": "sklearn.feature_selection.SelectKBest",
+      "hyperparameters": {
+        "k": {
+          "type": "integer",
+          "search_space": [5, 50],
+          "suggested_values": [5, 10, 15, 20, 30]
+        }
+      }
+    },
+    {
+      "step": "feature_selection",
+      "name": "SelectPercentile",
+      "module": "sklearn.feature_selection.SelectPercentile",
+      "hyperparameters": {
+        "percentile": {
+          "type": "integer",
+          "search_space": [10, 100],
+          "suggested_values": [25, 50, 75, 100]
+        }
+      }
+    },
+    {
+      "step": "feature_selection",
+      "name": "VarianceThreshold",
+      "module": "sklearn.feature_selection.VarianceThreshold",
+      "hyperparameters": {
+        "threshold": {
+          "type": "continuous",
+          "search_space": [0.0, 1.0],
+          "suggested_values": [0.0, 0.01, 0.05, 0.1]
+        }
+      }
+    },
+    {
+      "step": "dimensionality_reduction",
+      "name": "PCA",
+      "module": "sklearn.decomposition.PCA",
+      "hyperparameters": {
+        "n_components": {
+          "type": "categorical",
+          "search_space": [5, 10, 15, 20, 30, 50, null, 0.95, 0.99]
+        },
+        "whiten": {
+          "type": "categorical",
+          "search_space": [true, false]
+        },
+        "svd_solver": {
+          "type": "categorical",
+          "search_space": ["auto", "full", "arpack", "randomized"]
+        }
+      }
+    },
+    {
+      "step": "dimensionality_reduction",
+      "name": "TruncatedSVD",
+      "module": "sklearn.decomposition.TruncatedSVD",
+      "hyperparameters": {
+        "n_components": {
+          "type": "integer",
+          "search_space": [2, 100],
+          "suggested_values": [5, 10, 20, 50]
+        },
+        "n_iter": {
+          "type": "integer",
+          "search_space": [3, 10],
+          "suggested_values": [5, 7]
+        }
+      }
+    },
+    {
+      "step": "dimensionality_reduction",
+      "name": "NMF",
+      "module": "sklearn.decomposition.NMF",
+      "hyperparameters": {
+        "n_components": {
+          "type": "integer",
+          "search_space": [2, 50],
+          "suggested_values": [5, 10, 20]
+        },
+        "init": {
+          "type": "categorical",
+          "search_space": ["random", "nndsvd", "nndsvda", "nndsvdar"]
+        },
+        "max_iter": {
+          "type": "integer",
+          "search_space": [100, 1000],
+          "suggested_values": [200, 500]
+        }
+      }
+    },
+    {
+      "step": "column_transformer",
+      "name": "ColumnTransformer",
+      "module": "sklearn.compose.ColumnTransformer",
+      "hyperparameters": {
+        "transformers": {
+          "type": "list",
+          "schema": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "transformer": {
+                  "anyOf": [
+                    { "type": "string" },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "steps": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "class": { "type": "string" },
+                              "params": { "type": "object" }
+                            },
+                            "required": ["class"]
+                          }
+                        }
+                      },
+                      "required": ["steps"]
+                    },
+                    { "enum": ["passthrough", "drop", null] }
+                  ]
+                },
+                "columns": {
+                  "type": "array",
+                  "items": {
+                    "anyOf": [{ "type": "string" }, { "type": "integer" }]
+                  }
+                }
+              },
+              "required": ["name", "transformer", "columns"]
+            }
+          },
+          "example": [
+            {
+              "name": "num",
+              "transformer": {
+                "steps": [
+                  { "class": "SimpleImputer", "params": { "strategy": "mean" } },
+                  {
+                    "class": "StandardScaler",
+                    "params": { "with_mean": true, "with_std": true }
+                  }
+                ]
+              },
+              "columns": ["column_0", "column_1"]
+            },
+            {
+              "name": "cat",
+              "transformer": {
+                "steps": [
+                  {
+                    "class": "SimpleImputer",
+                    "params": { "strategy": "most_frequent" }
+                  },
+                  {
+                    "class": "OneHotEncoder",
+                    "params": { "handle_unknown": "ignore", "sparse_output": false }
+                  }
+                ]
+              },
+              "columns": ["column_2"]
+            }
+          ]
+        },
+        "remainder": {
+          "type": "categorical",
+          "search_space": ["drop", "passthrough", null]
+        }
+      }
+    }
+  ],
+  "sklearn_classification_algorithms": [
+    {
+      "name": "LogisticRegression",
+      "module": "sklearn.linear_model.LogisticRegression",
+      "hyperparameters": {
+        "C": {
+          "type": "continuous",
+          "search_space": [0.001, 1000],
+          "scale": "log",
+          "suggested_values": [0.001, 0.01, 0.1, 1, 10, 100, 1000]
+        },
+        "solver": {
+          "type": "categorical",
+          "search_space": ["lbfgs", "liblinear", "saga", "newton-cg", "sag"]
+        },
+        "max_iter": {
+          "type": "integer",
+          "search_space": [100, 1000],
+          "suggested_values": [100, 200, 500, 1000]
+        },
+        "l1_ratio": {
+          "type": "continuous",
+          "search_space": [0.0, 1.0]
+        }
+      }
+    },
+    {
+      "name": "RidgeClassifier",
+      "module": "sklearn.linear_model.RidgeClassifier",
+      "hyperparameters": {
+        "alpha": {
+          "type": "continuous",
+          "search_space": [0.001, 100],
+          "scale": "log",
+          "suggested_values": [0.001, 0.01, 0.1, 1.0, 10, 100]
+        },
+        "fit_intercept": {
+          "type": "categorical",
+          "search_space": [true, false]
+        },
+        "solver": {
+          "type": "categorical",
+          "search_space": ["auto", "svd", "cholesky", "lsqr", "sparse_cg", "sag", "saga"]
+        }
+      }
+    },
+    {
+      "name": "SGDClassifier",
+      "module": "sklearn.linear_model.SGDClassifier",
+      "hyperparameters": {
+        "loss": {
+          "type": "categorical",
+          "search_space": ["hinge", "log_loss", "modified_huber", "squared_hinge", "perceptron"]
+        },
+        "penalty": {
+          "type": "categorical",
+          "search_space": ["l1", "l2", "elasticnet"]
+        },
+        "alpha": {
+          "type": "continuous",
+          "search_space": [0.00001, 1.0],
+          "scale": "log",
+          "suggested_values": [0.0001, 0.001, 0.01, 0.1, 1.0]
+        },
+        "l1_ratio": {
+          "type": "continuous",
+          "search_space": [0.0, 1.0]
+        },
+        "max_iter": {
+          "type": "integer",
+          "search_space": [100, 2000],
+          "suggested_values": [100, 500, 1000, 2000]
+        },
+        "learning_rate": {
+          "type": "categorical",
+          "search_space": ["constant", "optimal", "invscaling", "adaptive"]
+        },
+        "eta0": {
+          "type": "continuous",
+          "search_space": [0.0001, 1.0],
+          "scale": "log"
+        }
+      }
+    },
+    {
+      "name": "SVC",
+      "module": "sklearn.svm.SVC",
+      "hyperparameters": {
+        "C": {
+          "type": "continuous",
+          "search_space": [0.001, 1000],
+          "scale": "log",
+          "suggested_values": [0.1, 1, 10, 100, 1000]
+        },
+        "kernel": {
+          "type": "categorical",
+          "search_space": ["linear", "poly", "rbf", "sigmoid"]
+        },
+        "gamma": {
+          "type": "categorical",
+          "search_space": ["scale", "auto", 0.001, 0.01, 0.1, 1]
+        },
+        "degree": {
+          "type": "integer",
+          "search_space": [2, 5],
+          "note": "Only when kernel='poly'"
+        },
+        "coef0": {
+          "type": "continuous",
+          "search_space": [0.0, 10.0]
+        },
+        "probability": {
+          "type": "categorical",
+          "search_space": [true, false]
+        }
+      }
+    },
+    {
+      "name": "LinearSVC",
+      "module": "sklearn.svm.LinearSVC",
+      "hyperparameters": {
+        "C": {
+          "type": "continuous",
+          "search_space": [0.001, 1000],
+          "scale": "log",
+          "suggested_values": [0.01, 0.1, 1, 10, 100]
+        },
+        "penalty": {
+          "type": "categorical",
+          "search_space": ["l1", "l2"]
+        },
+        "loss": {
+          "type": "categorical",
+          "search_space": ["hinge", "squared_hinge"]
+        },
+        "max_iter": {
+          "type": "integer",
+          "search_space": [500, 5000],
+          "suggested_values": [1000, 2000, 5000]
+        }
+      }
+    },
+    {
+      "name": "KNeighborsClassifier",
+      "module": "sklearn.neighbors.KNeighborsClassifier",
+      "hyperparameters": {
+        "n_neighbors": {
+          "type": "integer",
+          "search_space": [1, 50],
+          "suggested_values": [3, 5, 7, 9, 11, 15, 21]
+        },
+        "weights": {
+          "type": "categorical",
+          "search_space": ["uniform", "distance"]
+        },
+        "metric": {
+          "type": "categorical",
+          "search_space": ["euclidean", "manhattan", "minkowski", "chebyshev"]
+        },
+        "p": {
+          "type": "integer",
+          "search_space": [1, 3],
+          "note": "Only when metric='minkowski'"
+        },
+        "algorithm": {
+          "type": "categorical",
+          "search_space": ["auto", "ball_tree", "kd_tree", "brute"]
+        }
+      }
+    },
+    {
+      "name": "DecisionTreeClassifier",
+      "module": "sklearn.tree.DecisionTreeClassifier",
+      "hyperparameters": {
+        "criterion": {
+          "type": "categorical",
+          "search_space": ["gini", "entropy", "log_loss"]
+        },
+        "max_depth": {
+          "type": "integer",
+          "search_space": [1, 50],
+          "suggested_values": [3, 5, 10, 20, null]
+        },
+        "min_samples_split": {
+          "type": "integer",
+          "search_space": [2, 20],
+          "suggested_values": [2, 5, 10, 20]
+        },
+        "min_samples_leaf": {
+          "type": "integer",
+          "search_space": [1, 20],
+          "suggested_values": [1, 2, 4, 8]
+        },
+        "max_features": {
+          "type": "categorical",
+          "search_space": ["sqrt", "log2", null, 0.5, 0.8]
+        },
+        "splitter": {
+          "type": "categorical",
+          "search_space": ["best", "random"]
+        }
+      }
+    },
+    {
+      "name": "RandomForestClassifier",
+      "module": "sklearn.ensemble.RandomForestClassifier",
+      "hyperparameters": {
+        "n_estimators": {
+          "type": "integer",
+          "search_space": [50, 1000],
+          "suggested_values": [100, 200, 300, 500, 1000]
+        },
+        "criterion": {
+          "type": "categorical",
+          "search_space": ["gini", "entropy", "log_loss"]
+        },
+        "max_depth": {
+          "type": "integer",
+          "search_space": [3, 50],
+          "suggested_values": [5, 10, 20, null]
+        },
+        "min_samples_split": {
+          "type": "integer",
+          "search_space": [2, 20]
+        },
+        "min_samples_leaf": {
+          "type": "integer",
+          "search_space": [1, 10]
+        },
+        "max_features": {
+          "type": "categorical",
+          "search_space": ["sqrt", "log2", null, 0.3, 0.5, 0.8]
+        },
+        "bootstrap": {
+          "type": "categorical",
+          "search_space": [true, false]
+        }
+      }
+    },
+    {
+      "name": "AdaBoostClassifier",
+      "module": "sklearn.ensemble.AdaBoostClassifier",
+      "hyperparameters": {
+        "n_estimators": {
+          "type": "integer",
+          "search_space": [10, 500],
+          "suggested_values": [50, 100, 200, 300]
+        },
+        "learning_rate": {
+          "type": "continuous",
+          "search_space": [0.01, 2.0],
+          "scale": "log",
+          "suggested_values": [0.1, 0.5, 1.0, 1.5]
+        },
+        "algorithm": {
+          "type": "categorical",
+          "search_space": ["SAMME"]
+        }
+      }
+    },
+    {
+      "name": "BaggingClassifier",
+      "module": "sklearn.ensemble.BaggingClassifier",
+      "hyperparameters": {
+        "n_estimators": {
+          "type": "integer",
+          "search_space": [10, 500],
+          "suggested_values": [10, 50, 100, 200]
+        },
+        "max_samples": {
+          "type": "continuous",
+          "search_space": [0.1, 1.0],
+          "suggested_values": [0.5, 0.7, 0.8, 1.0]
+        },
+        "max_features": {
+          "type": "continuous",
+          "search_space": [0.1, 1.0],
+          "suggested_values": [0.5, 0.7, 0.8, 1.0]
+        },
+        "bootstrap": {
+          "type": "categorical",
+          "search_space": [true, false]
+        },
+        "bootstrap_features": {
+          "type": "categorical",
+          "search_space": [true, false]
+        }
+      }
+    },
+    {
+      "name": "ExtraTreesClassifier",
+      "module": "sklearn.ensemble.ExtraTreesClassifier",
+      "hyperparameters": {
+        "n_estimators": {
+          "type": "integer",
+          "search_space": [50, 1000],
+          "suggested_values": [100, 200, 500, 1000]
+        },
+        "max_depth": {
+          "type": "integer",
+          "search_space": [3, 50],
+          "suggested_values": [5, 10, 20, null]
+        },
+        "min_samples_split": {
+          "type": "integer",
+          "search_space": [2, 20]
+        },
+        "min_samples_leaf": {
+          "type": "integer",
+          "search_space": [1, 10]
+        },
+        "max_features": {
+          "type": "categorical",
+          "search_space": ["sqrt", "log2", null, 0.3, 0.5]
+        },
+        "bootstrap": {
+          "type": "categorical",
+          "search_space": [true, false]
+        }
+      }
+    },
+    {
+      "name": "GradientBoostingClassifier",
+      "module": "sklearn.ensemble.GradientBoostingClassifier",
+      "hyperparameters": {
+        "n_estimators": {
+          "type": "integer",
+          "search_space": [50, 1000],
+          "suggested_values": [100, 200, 300, 500]
+        },
+        "learning_rate": {
+          "type": "continuous",
+          "search_space": [0.001, 0.5],
+          "scale": "log",
+          "suggested_values": [0.01, 0.05, 0.1, 0.2]
+        },
+        "max_depth": {
+          "type": "integer",
+          "search_space": [2, 10],
+          "suggested_values": [3, 4, 5, 6, 8]
+        },
+        "min_samples_split": {
+          "type": "integer",
+          "search_space": [2, 20]
+        },
+        "min_samples_leaf": {
+          "type": "integer",
+          "search_space": [1, 10]
+        },
+        "subsample": {
+          "type": "continuous",
+          "search_space": [0.5, 1.0],
+          "suggested_values": [0.6, 0.7, 0.8, 0.9, 1.0]
+        },
+        "max_features": {
+          "type": "categorical",
+          "search_space": ["sqrt", "log2", null, 0.5, 0.8]
+        }
+      }
+    },
+    {
+      "name": "HistGradientBoostingClassifier",
+      "module": "sklearn.ensemble.HistGradientBoostingClassifier",
+      "hyperparameters": {
+        "max_iter": {
+          "type": "integer",
+          "search_space": [50, 1000],
+          "suggested_values": [100, 200, 300, 500]
+        },
+        "learning_rate": {
+          "type": "continuous",
+          "search_space": [0.001, 0.5],
+          "scale": "log",
+          "suggested_values": [0.01, 0.05, 0.1, 0.2]
+        },
+        "max_depth": {
+          "type": "integer",
+          "search_space": [2, 15],
+          "suggested_values": [3, 5, 7, 10, null]
+        },
+        "max_leaf_nodes": {
+          "type": "integer",
+          "search_space": [15, 255],
+          "suggested_values": [15, 31, 63, 127]
+        },
+        "min_samples_leaf": {
+          "type": "integer",
+          "search_space": [1, 50],
+          "suggested_values": [20, 30, 40, 50]
+        },
+        "l2_regularization": {
+          "type": "continuous",
+          "search_space": [0.0, 1.0],
+          "suggested_values": [0.0, 0.1, 0.5, 1.0]
+        },
+        "early_stopping": {
+          "type": "categorical",
+          "search_space": [true, false]
+        },
+        "validation_fraction": {
+          "type": "continuous",
+          "search_space": [0.1, 0.3]
+        }
+      }
+    },
+    {
+      "name": "GaussianNB",
+      "module": "sklearn.naive_bayes.GaussianNB",
+      "hyperparameters": {
+        "var_smoothing": {
+          "type": "continuous",
+          "search_space": [1e-11, 1e-6],
+          "scale": "log",
+          "suggested_values": [1e-9, 1e-8, 1e-7]
+        }
+      }
+    },
+    {
+      "name": "MultinomialNB",
+      "module": "sklearn.naive_bayes.MultinomialNB",
+      "hyperparameters": {
+        "alpha": {
+          "type": "continuous",
+          "search_space": [0.0, 10.0],
+          "suggested_values": [0.0, 0.1, 0.5, 1.0, 2.0, 5.0]
+        },
+        "fit_prior": {
+          "type": "categorical",
+          "search_space": [true, false]
+        }
+      }
+    },
+    {
+      "name": "ComplementNB",
+      "module": "sklearn.naive_bayes.ComplementNB",
+      "hyperparameters": {
+        "alpha": {
+          "type": "continuous",
+          "search_space": [0.0, 10.0],
+          "suggested_values": [0.1, 0.5, 1.0, 2.0]
+        },
+        "fit_prior": {
+          "type": "categorical",
+          "search_space": [true, false]
+        },
+        "norm": {
+          "type": "categorical",
+          "search_space": [true, false]
+        }
+      }
+    },
+    {
+      "name": "BernoulliNB",
+      "module": "sklearn.naive_bayes.BernoulliNB",
+      "hyperparameters": {
+        "alpha": {
+          "type": "continuous",
+          "search_space": [0.0, 10.0],
+          "suggested_values": [0.0, 0.1, 0.5, 1.0]
+        },
+        "binarize": {
+          "type": "continuous",
+          "search_space": [0.0, 1.0],
+          "suggested_values": [0.0, 0.1, 0.5]
+        },
+        "fit_prior": {
+          "type": "categorical",
+          "search_space": [true, false]
+        }
+      }
+    },
+    {
+      "name": "MLPClassifier",
+      "module": "sklearn.neural_network.MLPClassifier",
+      "hyperparameters": {
+        "hidden_layer_sizes": {
+          "type": "categorical",
+          "search_space": [
+            [64], [128], [256],
+            [64, 32], [128, 64], [256, 128],
+            [64, 64, 32], [128, 64, 32]
+          ]
+        },
+        "activation": {
+          "type": "categorical",
+          "search_space": ["relu", "tanh", "logistic"]
+        },
+        "solver": {
+          "type": "categorical",
+          "search_space": ["adam", "sgd", "lbfgs"]
+        },
+        "alpha": {
+          "type": "continuous",
+          "search_space": [0.00001, 1.0],
+          "scale": "log",
+          "suggested_values": [0.0001, 0.001, 0.01, 0.1]
+        },
+        "learning_rate": {
+          "type": "categorical",
+          "search_space": ["constant", "invscaling", "adaptive"]
+        },
+        "learning_rate_init": {
+          "type": "continuous",
+          "search_space": [0.0001, 0.1],
+          "scale": "log",
+          "suggested_values": [0.001, 0.01, 0.05]
+        },
+        "max_iter": {
+          "type": "integer",
+          "search_space": [100, 1000],
+          "suggested_values": [200, 500, 1000]
+        },
+        "batch_size": {
+          "type": "categorical",
+          "search_space": ["auto", 32, 64, 128, 256]
+        }
+      }
+    },
+    {
+      "name": "LinearDiscriminantAnalysis",
+      "module": "sklearn.discriminant_analysis.LinearDiscriminantAnalysis",
+      "hyperparameters": {
+        "solver": {
+          "type": "categorical",
+          "search_space": ["svd", "lsqr", "eigen"]
+        },
+        "shrinkage": {
+          "type": "categorical",
+          "search_space": [null, "auto", 0.1, 0.3, 0.5, 0.7, 0.9],
+          "note": "Only when solver='lsqr' or 'eigen'"
+        },
+        "n_components": {
+          "type": "integer",
+          "search_space": [1, 20],
+          "note": "For dimensionality reduction step"
+        }
+      }
+    },
+    {
+      "name": "Perceptron",
+      "module": "sklearn.linear_model.Perceptron",
+      "hyperparameters": {
+        "penalty": {
+          "type": "categorical",
+          "search_space": [null, "l1", "l2", "elasticnet"]
+        },
+        "alpha": {
+          "type": "continuous",
+          "search_space": [0.0001, 1.0],
+          "scale": "log"
+        },
+        "max_iter": {
+          "type": "integer",
+          "search_space": [100, 2000],
+          "suggested_values": [1000, 1500]
+        },
+        "eta0": {
+          "type": "continuous",
+          "search_space": [0.1, 10.0]
+        }
+      }
+    }
+  ]
+}
