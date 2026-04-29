@@ -2,7 +2,7 @@ import pandas as pd
 
 from typing import Optional, Dict, Any
 
-def compute_meta_features(X: pd.DataFrame, y: str, y_data_type: str = 'nominal') -> Dict[str, Any]:
+def compute_meta_features(X: pd.DataFrame, y: str, y_data_type: str = 'nominal', include_landmarkers: bool = False) -> Dict[str, Any]:
   """Calcular las Meta-Features del dataset proporcionado
 
   Args:
@@ -47,9 +47,9 @@ def compute_meta_features(X: pd.DataFrame, y: str, y_data_type: str = 'nominal')
     upper_bound = Q3 + 1.5 * IQR
     outliers += ((X[col] < lower_bound) | (X[col] > upper_bound)).sum()
 
-  # TODO: información del dataset (si no está en meta-features)
-  # TODO: - stats por columnas: mean, std, min, max, unique, top_values, porc
-  # TODO: -
+  # TODO: tipo de datos por columna
+  # TODO: en correspondencia al tipo de dato, extraer de cada columna independiente sus meta-features (example: mean, std, min, max, unique, top_values, porcentage)
+  # TODO: añadir landmarkers a través de un parámetro (se define un pipeline genérico)
 
   return {
       "Number of Instances": num_instances,

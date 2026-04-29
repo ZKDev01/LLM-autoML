@@ -12,14 +12,21 @@ AVAILABLE_MODELS = {
     "7": ("qwen3-coder:480b", "Qwen3 Coder 480B"),
 }
 
+def test_simulation_of_pipeline_generation() -> None:
+  from src.schema import test_pipeline_generation, MLPipelineGenerator
+
+  generator = MLPipelineGenerator()
+  prompt = generator.generate_prompt()
+  print(len(prompt))
+
+  return
+  header("  [TEST] Ejecutando test de generación de pipelines: Parsing y Evaluation")
+  test_pipeline_generation()
+
 def test_generate_pipelines() -> None:
   from src.autoML_bot import AutoML_Bot
 
-  bot = AutoML_Bot(
-      task_description="classification",
-      cv_folds=5,
-      verbose=True
-  )
+  bot = AutoML_Bot(task_description="classification", cv_folds=5, verbose=True)
   # Cargar dataset desde OpenML
   success, msg = bot.load_dataset_from_openml(dataset_id=31)
   if not success:
@@ -27,14 +34,14 @@ def test_generate_pipelines() -> None:
     return
 
   # Preparar para el LLM (anonimiza columnas, meta-features)
-  success, msg = bot.prepare_for_llm(K=0, include_anonymize_columns=True)
+  success, msg = bot.prepare_for_llm(k_examples=0, include_anonymize_columns=True)
   if not success:
     fail(f"[ERROR] Error al preparar para LLM: {msg}")
     return
 
   # Generar Pipeline (hasta k_repair intentos de reparación)
   try:
-    pipeline, reasoning, metrics, config = bot.generate_pipelines(K=3, print_chat=True)
+    pipeline, reasoning, metrics, config = bot.generate_pipelines(k_repair=3, print_chat=True)
   except Exception as e:
     fail(f"[ERROR] No se pudo generar ningún pipeline: {e}")
     return
@@ -47,6 +54,36 @@ def test_generate_pipelines() -> None:
   print("=" * 20 + " [Métricas] " + "=" * 20)
   for k, v in metrics.items():
     print(f"   {k}: {v:.4f}")
+
+def test_generate_pipelines_optimization() -> None:
+  from src.autoML_bot import AutoML_Bot
+
+  bot = AutoML_Bot(task_description="classification", cv_folds=5, verbose=True)
+  # Cargar dataset desde OpenML
+  success, msg = bot.load_dataset_from_openml(dataset_id=31)
+  if not success:
+    fail(f"[ERROR] Error al cargar dataset: {msg}")
+    return
+
+  # Preparar para el LLM (anonimiza columnas, meta-features)
+  success, msg = bot.prepare_for_llm(k_examples=0, include_anonymize_columns=True)
+  if not success:
+    fail(f"[ERROR] Error al preparar para LLM: {msg}")
+    return
+
+  try:
+    pipeline, reasoning, metrics = bot.generate_pipelines_with_optimization(max_iterations=10, max_history_size=10, k_repair=5, add_reasoning=False)
+  except Exception as e:
+    fail(f"[ERROR] No se pudo generar ningún pipeline: {e}")
+    return
+
+  # Mostrar resultados
+  print("=" * 20 + " [Pipeline scikit-learn] " + "=" * 20)
+  print(pipeline)
+  print("=" * 20 + " [Métricas] " + "=" * 20)
+  for k, v in metrics.items():
+    print(f"   {k}: {v:.4f}")
+
 
 def select_model() -> str:
   "Permite seleccionar un modelo de forma dinámica"
@@ -80,8 +117,9 @@ def show_menu() -> None:
 
   print("Selecciona un test para ejecutar:\n")
   print(f"  {CYAN}1.{RESET} Generación de Pipelines de Sklearn vía LLM")
-  print(f"\n{BOLD}{'─' * 70}{RESET}")
+  print(f"  {CYAN}2.{RESET} Generación de Pipelines de Sklearn vía LLM (Optimización)")
 
+  print(f"\n{BOLD}{'─' * 70}{RESET}")
 
 def main() -> None:
   # Loop principal del CLI
@@ -93,6 +131,8 @@ def main() -> None:
       match option:
         case "1":
           test_generate_pipelines()
+        case "2":
+          test_generate_pipelines_optimization()
 
     except KeyboardInterrupt:
       print(f"\n{RED}Exiting the CLI{RESET}")
@@ -102,3 +142,4 @@ def main() -> None:
 
 if __name__ == "__main__":
   main()
+  # test_simulation_of_pipeline_generation()

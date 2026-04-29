@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import re
+import json
 import traceback
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Any
@@ -11,16 +11,36 @@ import numpy as np
 from sklearn.feature_selection import f_classif
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import cross_val_score
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+from sklearn.metrics import accuracy_score
 
 from src.file_handling import load_sklearn_map
 
-# ---------------------------------------------------------------------------
-# 0. Cargar componentes desde sklearn_map.json
-# ---------------------------------------------------------------------------
+# Constants
+JSON_EXAMPLE = """
+{
+  "steps": [
+    {
+      "name": "scaler",
+      "component": "StandardScaler",
+      "hyperparameters": {"with_mean": true, "with_std": true}
+    },
+    {
+      "name": "feature_sel",
+      "component": "SelectKBest",
+      "hyperparameters": {"k": 10}
+    },
+    {
+      "name": "clf",
+      "component": "RandomForestClassifier",
+      "hyperparameters": {"n_estimators": 100, "max_depth": 5, "min_samples_split": 4}
+    }
+  ]
+}
+"""
 
-def _load_components_from_json(json_path: str = "sklearn_map.json") -> Dict[str, Dict]:
-  """Construye ALLOWED_COMPONENTS a partir del archivo JSON."""
+
+def _load_components_from_json() -> Dict[str, Dict]:
+  "Construye ALLOWED_COMPONENTS a partir del archivo JSON"
   data = load_sklearn_map()
 
   allowed = {}
@@ -33,7 +53,7 @@ def _load_components_from_json(json_path: str = "sklearn_map.json") -> Dict[str,
       "transformer": "preprocessor",
       "feature_selection": "feature_selection",
       "dimensionality_reduction": "feature_selection",
-      "column_transformer": "preprocessor",   # <-- AHORA PERMITIDO
+      "column_transformer": "preprocessor",
   }
 
   # Procesar preprocessing_steps
@@ -159,25 +179,8 @@ def _load_components_from_json(json_path: str = "sklearn_map.json") -> Dict[str,
 
   return allowed
 
-
 # Cargar componentes (falla si no existe el archivo o hay errores de importación)
-ALLOWED_COMPONENTS = _load_components_from_json("sklearn_map.json")
-
-# Orden válido de stages dentro del pipeline
-VALID_STAGE_ORDER = ["preprocessor", "feature_selection", "classifier"]
-
-# El pipeline DEBE terminar con exactamente un clasificador
-PIPELINE_RULES = {
-    "must_end_with": "classifier",
-    "classifier_count": {"min": 1, "max": 1},   # exactamente uno
-    "preprocessor_count": {"min": 0, "max": 10},
-    "feature_selection_count": {"min": 0, "max": 10},
-}
-
-
-# ---------------------------------------------------------------------------
-# 1. Clases auxiliares y funciones de parseo (con soporte para ColumnTransformer)
-# ---------------------------------------------------------------------------
+ALLOWED_COMPONENTS = _load_components_from_json()
 
 @dataclass
 class ParseResult:
@@ -186,19 +189,18 @@ class ParseResult:
   errors: list[str] = field(default_factory=list)
   warnings: list[str] = field(default_factory=list)
 
-  def to_feedback(self) -> str:
+  def to_feedback(self, add_warning: bool = True) -> str:
     if self.success:
-      return "Pipeline parseado correctamente."
-    lines = ["❌ ERRORES AL PARSEAR EL PIPELINE:"]
+      return "[SUCCESS] Pipeline parseado correctamente."
+    lines = ["[ERROR] Errores al parsear el pipeline:"]
     for e in self.errors:
-      lines.append(f"  • {e}")
-    if self.warnings:
-      lines.append("⚠️  Advertencias:")
+      lines.append(f"- {e}")
+    if self.warnings and add_warning:
+      lines.append("[WARNING] Advertencias:")
       for w in self.warnings:
-        lines.append(f"  • {w}")
-    lines.append("\nFormato esperado (JSON):\n" + _get_expected_format_hint())
+        lines.append(f"- {w}")
+    lines.append("\nFormato esperado (JSON):\n" + JSON_EXAMPLE)
     return "\n".join(lines)
-
 
 @dataclass
 class EvaluationResult:
@@ -207,40 +209,21 @@ class EvaluationResult:
   errors: list[str] = field(default_factory=list)
   warnings: list[str] = field(default_factory=list)
 
-  def to_feedback(self) -> str:
+  def to_feedback(self, add_warning: bool = True) -> str:
     if self.success:
-      lines = ["✅ Pipeline evaluado correctamente."]
-      lines.append("Métricas obtenidas (CV):")
+      lines = ["[SUCCESS] Pipeline evaluado correctamente."]
+      lines.append("[RESULTS] Métricas obtenidas:")
       for k, v in self.metrics.items():
-        lines.append(f"  • {k}: {v:.4f}")
+        lines.append(f"- {k}: {v:.4f}")
       return "\n".join(lines)
-    lines = ["❌ ERRORES AL EVALUAR EL PIPELINE:"]
+    lines = ["[ERROR] Errores al evaluar el pipeline:"]
     for e in self.errors:
-      lines.append(f"  • {e}")
-    if self.warnings:
-      lines.append("⚠️  Advertencias:")
+      lines.append(f"- {e}")
+    if self.warnings and add_warning:
+      lines.append("[WARNING] Advertencias:")
       for w in self.warnings:
-        lines.append(f"  • {w}")
+        lines.append(f"- {w}")
     return "\n".join(lines)
-
-
-def _get_expected_format_hint() -> str:
-  example = {
-      "steps": [
-          {
-              "name": "scaler",
-              "component": "StandardScaler",
-              "hyperparameters": {"with_mean": True, "with_std": True},
-          },
-          {
-              "name": "classifier",
-              "component": "RandomForestClassifier",
-              "hyperparameters": {"n_estimators": 100, "max_depth": 5},
-          },
-      ]
-  }
-  return json.dumps(example, indent=2)
-
 
 def _extract_json_from_text(text: str) -> dict | None:
   md_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
@@ -267,14 +250,8 @@ def _extract_json_from_text(text: str) -> dict | None:
             break
   return None
 
-
-# --- Validación especial para ColumnTransformer.transformers ---
-def _validate_column_transformer_transformers(
-    component_name: str,
-    param_value: Any,
-    param_path: str,
-) -> list[str]:
-  """Valida la lista 'transformers' de ColumnTransformer."""
+def _validate_column_transformer_transformers(component_name: str, param_value: Any, param_path: str) -> list[str]:
+  "Valida la lista 'transformers' de ColumnTransformer."
   errors = []
   if not isinstance(param_value, list):
     errors.append(f"'{param_path}': debe ser una lista de transformadores.")
@@ -302,10 +279,7 @@ def _validate_column_transformer_transformers(
     if transformer_name is None:
       errors.append(f"{prefix}.transformer: es obligatorio.")
     elif transformer_name not in ALLOWED_COMPONENTS:
-      errors.append(
-          f"{prefix}.transformer: '{transformer_name}' no es un componente permitido. "
-          f"Permitidos: {list(ALLOWED_COMPONENTS.keys())}."
-      )
+      errors.append(f"{prefix}.transformer: '{transformer_name}' no es un componente permitido.\nPermitidos: {list(ALLOWED_COMPONENTS.keys())}.")
     else:
       # Validar hiperparámetros del sub‑transformer si existen
       sub_hp = tf_dict.get("transformer_hyperparameters", {})
@@ -314,20 +288,11 @@ def _validate_column_transformer_transformers(
       given_hp = set(sub_hp.keys())
       unknown = given_hp - allowed_hp
       if unknown:
-        errors.append(
-            f"{prefix}.transformer '{transformer_name}': "
-            f"hiperparámetros desconocidos: {unknown}. "
-            f"Válidos: {allowed_hp}."
-        )
+        errors.append(f"{prefix}.transformer '{transformer_name}':\nHiperparámetros desconocidos: {unknown}.\nVálidos: {allowed_hp}.")
       for hp_name, hp_value in sub_hp.items():
         if hp_name not in sub_schema["hyperparameters"]:
           continue
-        param_errors = _validate_hyperparameter(
-            transformer_name,
-            hp_name,
-            hp_value,
-            sub_schema["hyperparameters"][hp_name],
-        )
+        param_errors = _validate_hyperparameter(transformer_name, hp_name, hp_value, sub_schema["hyperparameters"][hp_name])
         errors.extend(param_errors)
 
     # Validar 'columns' (debe ser lista de enteros o strings)
@@ -343,13 +308,7 @@ def _validate_column_transformer_transformers(
 
   return errors
 
-
-def _validate_hyperparameter(
-    component_name: str,
-    param_name: str,
-    param_value: Any,
-    param_schema: dict,
-) -> list[str]:
+def _validate_hyperparameter(component_name: str, param_name: str, param_value: Any, param_schema: dict) -> list[str]:
   errors = []
 
   # Validación especial para ColumnTransformer.transformers
@@ -376,70 +335,19 @@ def _validate_hyperparameter(
     coerced = tuple(param_value)
 
   if not isinstance(coerced, expected_type):
-    errors.append(
-        f"'{component_name}.{param_name}': tipo incorrecto. "
-        f"Se esperaba {expected_type.__name__}, se recibió {type(param_value).__name__}."
-    )
+    errors.append(f"'{component_name}.{param_name}': tipo incorrecto.\nSe esperaba {expected_type.__name__}, se recibió {type(param_value).__name__}.")
     return errors
 
   if "allowed" in param_schema:
     if coerced not in param_schema["allowed"]:
-      errors.append(
-          f"'{component_name}.{param_name}': valor '{coerced}' no está permitido. "
-          f"Valores válidos: {param_schema['allowed']}."
-      )
+      errors.append(f"'{component_name}.{param_name}': valor '{coerced}' no está permitido.\nValores válidos: {param_schema['allowed']}.")
 
   if "range" in param_schema:
     rng = param_schema["range"]
     if not (rng["min"] <= coerced <= rng["max"]):
-      errors.append(
-          f"'{component_name}.{param_name}': valor {coerced} fuera de rango "
-          f"[{rng['min']}, {rng['max']}]."
-      )
+      errors.append(f"'{component_name}.{param_name}': valor {coerced} fuera de rango.\n[{rng['min']}, {rng['max']}].")
 
   return errors
-
-
-def _validate_pipeline_structure(steps_meta: list[dict]) -> list[str]:
-  errors = []
-  stage_counts: dict[str, int] = {s: 0 for s in VALID_STAGE_ORDER}
-
-  for step in steps_meta:
-    stage = step["stage"]
-    stage_counts[stage] = stage_counts.get(stage, 0) + 1
-
-  for stage, rule_key in [
-      ("classifier", "classifier_count"),
-      ("preprocessor", "preprocessor_count"),
-      ("feature_selection", "feature_selection_count"),
-  ]:
-    rule = PIPELINE_RULES[rule_key]
-    count = stage_counts[stage]
-    if not (rule["min"] <= count <= rule["max"]):
-      errors.append(
-          f"Stage '{stage}': se encontraron {count}, pero se requiere "
-          f"entre {rule['min']} y {rule['max']}."
-      )
-
-  last_stage_idx = -1
-  for step in steps_meta:
-    stage = step["stage"]
-    idx = VALID_STAGE_ORDER.index(stage)
-    if idx < last_stage_idx:
-      errors.append(
-          f"Orden incorrecto: el componente '{step['component']}' "
-          f"(stage '{stage}') aparece después de un stage posterior."
-      )
-    last_stage_idx = max(last_stage_idx, idx)
-
-  if steps_meta and steps_meta[-1]["stage"] != PIPELINE_RULES["must_end_with"]:
-    errors.append(
-        f"El pipeline debe terminar con un clasificador, "
-        f"pero termina con '{steps_meta[-1]['component']}' (stage '{steps_meta[-1]['stage']}')."
-    )
-
-  return errors
-
 
 def _build_sklearn_step(step_def: dict) -> tuple[str, Any]:
   component_name = step_def["component"]
@@ -507,10 +415,7 @@ def parse_llm_response_to_pipeline(llm_response: str) -> ParseResult:
 
   raw_json = _extract_json_from_text(llm_response)
   if raw_json is None:
-    errors.append(
-        "No se encontró ningún bloque JSON válido en la respuesta. "
-        "Asegúrate de incluir el pipeline en formato JSON."
-    )
+    errors.append("No se encontró ningún bloque JSON válido en la respuesta. Asegúrate de incluir el pipeline en formato JSON.")
     return ParseResult(success=False, errors=errors, warnings=warnings)
 
   if "steps" not in raw_json or not isinstance(raw_json["steps"], list):
@@ -535,10 +440,7 @@ def parse_llm_response_to_pipeline(llm_response: str) -> ParseResult:
 
     component_name = step["component"]
     if component_name not in ALLOWED_COMPONENTS:
-      errors.append(
-          f"{prefix}: componente '{component_name}' no está permitido. "
-          f"Componentes válidos: {list(ALLOWED_COMPONENTS.keys())}."
-      )
+      errors.append(f"{prefix}: componente '{component_name}' no está permitido.\nComponentes válidos: {list(ALLOWED_COMPONENTS.keys())}.")
       continue
 
     schema = ALLOWED_COMPONENTS[component_name]
@@ -548,36 +450,19 @@ def parse_llm_response_to_pipeline(llm_response: str) -> ParseResult:
     given_hp = set(hyperparams.keys())
     unknown = given_hp - allowed_hp
     if unknown:
-      errors.append(
-          f"{prefix} '{component_name}': hiperparámetros no reconocidos: {unknown}. "
-          f"Hiperparámetros válidos: {allowed_hp}."
-      )
+      errors.append(f"{prefix} '{component_name}': hiperparámetros no reconocidos: {unknown}.\nHiperparámetros válidos: {allowed_hp}.")
 
     for param_name, param_value in hyperparams.items():
       if param_name not in schema["hyperparameters"]:
         continue
-      param_errors = _validate_hyperparameter(
-          component_name,
-          param_name,
-          param_value,
-          schema["hyperparameters"][param_name],
-      )
+      param_errors = _validate_hyperparameter(component_name, param_name, param_value, schema["hyperparameters"][param_name])
       errors.extend(param_errors)
 
     missing_hp = allowed_hp - given_hp
     if missing_hp:
-      warnings.append(
-          f"'{component_name}': hiperparámetros no especificados "
-          f"(se usarán defaults): {missing_hp}."
-      )
+      warnings.append(f"'{component_name}': hiperparámetros no especificados (se usarán defaults): {missing_hp}.")
 
-    steps_meta.append(
-        {"name": step["name"], "component": component_name, "stage": schema["stage"]}
-    )
-
-  if steps_meta:
-    struct_errors = _validate_pipeline_structure(steps_meta)
-    errors.extend(struct_errors)
+    steps_meta.append({"name": step["name"], "component": component_name, "stage": schema["stage"]})
 
   if errors:
     return ParseResult(success=False, errors=errors, warnings=warnings)
@@ -594,7 +479,6 @@ def parse_llm_response_to_pipeline(llm_response: str) -> ParseResult:
 
   pipeline = Pipeline(sklearn_steps)
   return ParseResult(success=True, pipeline=pipeline, warnings=warnings)
-
 
 def evaluate_pipeline(pipeline: Pipeline, X: np.ndarray, y: np.ndarray, *, cv: int = 5, scoring: list[str] | None = None) -> EvaluationResult:
   errors = []
@@ -626,9 +510,7 @@ def evaluate_pipeline(pipeline: Pipeline, X: np.ndarray, y: np.ndarray, *, cv: i
   if y.ndim != 1:
     errors.append(f"y debe ser 1D (encontrado: {y.ndim}D).")
   if X.shape[0] != y.shape[0]:
-    errors.append(
-        f"X e y tienen distinto número de muestras: {X.shape[0]} vs {y.shape[0]}."
-    )
+    errors.append(f"X e y tienen distinto número de muestras: {X.shape[0]} vs {y.shape[0]}.")
   n_samples = X.shape[0]
   if n_samples < cv * 2:
     errors.append(
@@ -696,19 +578,14 @@ def evaluate_pipeline(pipeline: Pipeline, X: np.ndarray, y: np.ndarray, *, cv: i
   try:
     y_pred = pipeline.predict(X)
     metrics["train_accuracy"] = float(accuracy_score(y, y_pred))
-    metrics["train_f1_weighted"] = float(f1_score(y, y_pred, average="weighted", zero_division=0))
-    if n_classes == 2 and hasattr(pipeline, "predict_proba"):
-      y_prob = pipeline.predict_proba(X)[:, 1]
-      metrics["train_roc_auc"] = float(roc_auc_score(y, y_prob))
   except Exception as exc:
     warnings.append(f"No se pudieron calcular métricas de train: {exc}")
 
   return EvaluationResult(success=True, metrics=metrics, errors=[], warnings=warnings)
 
-
 class MLPipelineGenerator:
-  def __init__(self, task_description: str = "clasificación binaria"):
-    self.task_description = task_description
+  def __init__(self) -> None:
+    pass
 
   def generate_prompt(self) -> str:
     components_doc = json.dumps(
@@ -725,39 +602,7 @@ class MLPipelineGenerator:
         indent=2,
         default=str,
     )
-    example_ct = """
-EJEMPLO CON COLUMNTRANSFORMER:
-{
-  "steps": [
-    {
-      "name": "col_trans",
-      "component": "ColumnTransformer",
-      "hyperparameters": {
-        "transformers": [
-          {
-            "name": "num_scaler",
-            "transformer": "StandardScaler",
-            "columns": [0, 1, 2],
-            "transformer_hyperparameters": {"with_mean": true}
-          },
-          {
-            "name": "cat_encoder",
-            "transformer": "OneHotEncoder",
-            "columns": ["category_col"]
-          }
-        ],
-        "remainder": "passthrough"
-      }
-    },
-    {
-      "name": "clf",
-      "component": "LogisticRegression",
-      "hyperparameters": {"C": 1.0}
-    }
-  ]
-}
-"""
-    return f"""Eres un experto en Machine Learning. Tu tarea es diseñar un Pipeline de sklearn para: {self.task_description}.
+    return f"""Eres un experto en Machine Learning. Tu tarea es diseñar un Pipeline de sklearn para tareas de clasificación.
 
 REGLAS ESTRICTAS:
 1. Solo puedes usar los componentes listados abajo.
@@ -769,10 +614,8 @@ REGLAS ESTRICTAS:
 COMPONENTES DISPONIBLES Y SUS RESTRICCIONES:
 {components_doc}
 
-EJEMPLO BÁSICO DE RESPUESTA:
-{_get_expected_format_hint()}
-
-{example_ct}
+EJEMPLO DE RESPUESTA:
+{JSON_EXAMPLE}
 """
 
   @staticmethod
@@ -783,169 +626,154 @@ EJEMPLO BÁSICO DE RESPUESTA:
   def evaluate(pipeline: Pipeline, X: np.ndarray, y: np.ndarray, cv: int = 5, scoring: list[str] | None = None) -> EvaluationResult:
     return evaluate_pipeline(pipeline, X, y, cv=cv, scoring=scoring)
 
-  def run(
-      self,
-      llm_response: str,
-      X: np.ndarray,
-      y: np.ndarray,
-      cv: int = 5,
-  ) -> tuple[ParseResult, EvaluationResult | None]:
+  def run(self, llm_response: str, X: np.ndarray, y: np.ndarray, cv: int = 5) -> Tuple[ParseResult, EvaluationResult | None]:
     parse_result = parse_llm_response_to_pipeline(llm_response)
     if not parse_result.success:
       return parse_result, None
     eval_result = evaluate_pipeline(parse_result.pipeline, X, y, cv=cv)
     return parse_result, eval_result
 
-
-if __name__ == "__main__":
+def test_pipeline_generation(n_samples: int = 300, n_features: int = 20) -> None:
   from sklearn.datasets import make_classification
 
-  X, y = make_classification(n_samples=300, n_features=20, random_state=42)
+  X, y = make_classification(n_samples=n_samples, n_features=n_features)
+  generator = MLPipelineGenerator()
 
-  generator = MLPipelineGenerator("clasificación binaria con datos tabulares")
-
-  llm_ok = """
-    {
-      "steps": [
-        {
-          "name": "scaler",
-          "component": "StandardScaler",
-          "hyperparameters": {"with_mean": true, "with_std": true}
-        },
-        {
-          "name": "feature_sel",
-          "component": "SelectKBest",
-          "hyperparameters": {"k": 10}
-        },
-        {
-          "name": "clf",
-          "component": "RandomForestClassifier",
-          "hyperparameters": {"n_estimators": 100, "max_depth": 5, "min_samples_split": 4}
-        }
-      ]
-    }
-    """
-
-  print("=" * 60)
-  print("TEST con componentes cargados desde sklearn_map.json")
-  print("=" * 60)
-  parse_res, eval_res = generator.run(llm_ok, X, y)
-  print(parse_res.to_feedback())
-  if eval_res:
-    print(eval_res.to_feedback())
-
-  llm_error = """
-    {
+  # Simulación de respuesta del LLM
+  response = """
+  {
     "steps": [
-        {
+      {
         "name": "scaler",
         "component": "StandardScaler",
         "hyperparameters": {"with_mean": true, "with_std": true}
-        },
-        {
-        "name": "clf",
-        "component": "LogisticRegression",
-        "hyperparameters": {"C": 2000, "max_iter": 100}
-        },
-        {
+      },
+      {
         "name": "feature_sel",
         "component": "SelectKBest",
         "hyperparameters": {"k": 10}
-        }
+      },
+      {
+        "name": "clf",
+        "component": "RandomForestClassifier",
+        "hyperparameters": {"n_estimators": 100, "max_depth": 5, "min_samples_split": 4}
+      }
     ]
-    }
-    """
-  print("=" * 60)
-  print("TEST con orden incorrecto (clasificador antes de selección)")
-  print("=" * 60)
-  parse_res, eval_res = generator.run(llm_error, X, y)
-  print(parse_res.to_feedback())
-  if eval_res:
-    print(eval_res.to_feedback())
+  }
+  """
+  print(f"[RESPONSE] {response}")
+  parse_response, eval_response = generator.run(response, X, y)
+  print(parse_response.to_feedback(add_warning=False))
+  if eval_response:
+    print(eval_response.to_feedback(add_warning=False))
 
-  # Primer ejemplo de ColumnTransformer
-  llm_ct = """
-    {
-      "steps": [
-        {
-          "name": "col_trans",
-          "component": "ColumnTransformer",
-          "hyperparameters": {
-            "transformers": [
-              {
-                "name": "num_scaler",
-                "transformer": "StandardScaler",
-                "columns": [0, 1, 2],
-                "transformer_hyperparameters": {"with_mean": true}
-              }
-            ],
-            "remainder": "drop"
-          }
-        },
-        {
-          "name": "clf",
-          "component": "RandomForestClassifier",
-          "hyperparameters": {"n_estimators": 10}
-        }
-      ]
-    }
-    """
   print("=" * 60)
-  print("TEST con ColumnTransformer (primer ejemplo)")
-  print("=" * 60)
-  parse_res, eval_res = generator.run(llm_ct, X, y)
-  print(parse_res.to_feedback())
-  if eval_res:
-    print(eval_res.to_feedback())
+  response = """
+  {
+    "steps": [
+      {
+        "name": "scaler",
+        "component": "StandardScaler",
+        "hyperparameters": {"with_mean": true, "with_std": true}
+      },
+      {
+        "name": "clf",
+        "component": "LogisticRegression",
+        "hyperparameters": {"C": 2000, "max_iter": 100}
+      },
+      {
+        "name": "feature_sel",
+        "component": "SelectKBest",
+        "hyperparameters": {"k": 10}
+      }
+    ]
+  }
+  """
+  print(f"[RESPONSE] {response}")
+  parse_response, eval_response = generator.run(response, X, y)
+  print(parse_response.to_feedback(add_warning=False))
+  if eval_response:
+    print(eval_response.to_feedback(add_warning=False))
 
-  # Segundo ejemplo de ColumnTransformer (adicional)
-  llm_ct2 = """
-    {
-      "steps": [
-        {
-          "name": "column_transformer",
-          "component": "ColumnTransformer",
-          "hyperparameters": {
-            "transformers": [
-              {
-                "name": "num_std",
-                "transformer": "StandardScaler",
-                "columns": [0, 2, 4],
-                "transformer_hyperparameters": {"with_mean": true, "with_std": true}
-              },
-              {
-                "name": "num_minmax",
-                "transformer": "MinMaxScaler",
-                "columns": [1, 3, 5],
-                "transformer_hyperparameters": {"feature_range": [0, 1]}
-              },
-              {
-                "name": "cat_onehot",
-                "transformer": "OneHotEncoder",
-                "columns": [6, 7],
-                "transformer_hyperparameters": {"handle_unknown": "ignore", "sparse_output": false}
-              }
-            ],
-            "remainder": "passthrough"
-          }
-        },
-        {
-          "name": "feature_selector",
-          "component": "SelectKBest",
-          "hyperparameters": {"k": 8}
-        },
-        {
-          "name": "classifier",
-          "component": "SVC",
-          "hyperparameters": {"C": 1.0, "kernel": "rbf", "gamma": "scale"}
+  print("=" * 60)
+  response = """
+  {
+    "steps": [
+      {
+        "name": "col_trans",
+        "component": "ColumnTransformer",
+        "hyperparameters": {
+          "transformers": [
+            {
+              "name": "num_scaler",
+              "transformer": "StandardScaler",
+              "columns": [0, 1, 2],
+              "transformer_hyperparameters": {"with_mean": true}
+            }
+          ],
+        "remainder": "drop"
         }
-      ]
-    }
-    """
+      },
+      {
+        "name": "clf",
+        "component": "RandomForestClassifier",
+        "hyperparameters": {"n_estimators": 10}
+      }
+    ]
+  }
+  """
+  print(f"[RESPONSE] {response}")
+  parse_response, eval_response = generator.run(response, X, y)
+  print(parse_response.to_feedback(add_warning=False))
+  if eval_response:
+    print(eval_response.to_feedback(add_warning=False))
+
   print("=" * 60)
-  print("TEST con ColumnTransformer (segundo ejemplo - múltiples transformadores)")
-  print("=" * 60)
-  parse_res, eval_res = generator.run(llm_ct2, X, y)
-  print(parse_res.to_feedback())
-  if eval_res:
-    print(eval_res.to_feedback())
+  response = """
+  {
+    "steps": [
+      {
+        "name": "column_transformer",
+        "component": "ColumnTransformer",
+        "hyperparameters": {
+          "transformers": [
+            {
+              "name": "num_std",
+              "transformer": "StandardScaler",
+              "columns": [0, 2, 4],
+              "transformer_hyperparameters": {"with_mean": true, "with_std": true}
+            },
+            {
+              "name": "num_minmax",
+              "transformer": "MinMaxScaler",
+              "columns": [1, 3, 5],
+              "transformer_hyperparameters": {"feature_range": [0, 1]}
+            },
+            {
+              "name": "cat_onehot",
+              "transformer": "OneHotEncoder",
+              "columns": [6, 7],
+              "transformer_hyperparameters": {"handle_unknown": "ignore", "sparse_output": false}
+            }
+          ],
+          "remainder": "passthrough"
+        }
+      },
+      {
+        "name": "feature_selector",
+        "component": "SelectKBest",
+        "hyperparameters": {"k": 8}
+      },
+      {
+        "name": "classifier",
+        "component": "SVC",
+        "hyperparameters": {"C": 1.0, "kernel": "rbf", "gamma": "scale"}
+      }
+    ]
+  }
+  """
+  print(f"[RESPONSE] {response}")
+  parse_response, eval_response = generator.run(response, X, y)
+  print(parse_response.to_feedback(add_warning=False))
+  if eval_response:
+    print(eval_response.to_feedback(add_warning=False))
