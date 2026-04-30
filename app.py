@@ -41,7 +41,7 @@ def test_generate_pipelines() -> None:
 
   # Generar Pipeline (hasta k_repair intentos de reparación)
   try:
-    pipeline, reasoning, metrics, config = bot.generate_pipelines(k_repair=3, print_chat=True)
+    pipeline, reasoning, metrics, config = bot.generate_pipelines(k_repair=6, print_chat=False, add_reasoning=False, save_result_path=None, auto_generate_filename=True)
   except Exception as e:
     fail(f"[ERROR] No se pudo generar ningún pipeline: {e}")
     return

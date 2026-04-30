@@ -20,6 +20,9 @@ class AutoML_Bot(Ollama_ChatBot):
     self.task_description = task_description
     self.cv_folds = cv_folds
     self.verbose = verbose
+    self.model = model
+    self.host = host
+    self.stream = stream
 
     # Dataset attributes
     self.dataset: Optional[pd.DataFrame] = None
@@ -31,6 +34,7 @@ class AutoML_Bot(Ollama_ChatBot):
     # Build the system prompt using the new generator
     self.generator = MLPipelineGenerator()
     system_prompt = self.generator.generate_prompt()
+    self.system_prompt = system_prompt
 
     # Initialise the underlying chatbot
     super().__init__(model=model, host=host, system_prompt=system_prompt, stream=stream)
@@ -117,10 +121,10 @@ class AutoML_Bot(Ollama_ChatBot):
     "Base user prompt with the dataset description and optional error feedback."
     base = f"{self.dataset_info_text}\n\nGenera una propuesta de pipeline de clasificación para este dataset."
     if error_msg:
-      base += f"\n\nEl pipeline anterior falló con los siguientes errores:\n{error_msg}\nCorrígelos y responde con un JSON válido."
+      base += f"\n\nEl pipeline anterior falló con los siguientes errores:\n{error_msg}\nCorrígelos y responde con SOLO un JSON válido (sin markdown, ni bloques de código)"
     return base
 
-  def generate_pipelines(self, k_repair: int = 3, add_reasoning: bool = True, save_log_path: Optional[str] = None, print_chat: bool = False) -> Tuple[Pipeline, str, Dict[str, float], Dict]:
+  def generate_pipelines(self, k_repair: int = 3, add_reasoning: bool = True, save_log_path: Optional[str] = None, print_chat: bool = False, save_result_path: Optional[str] = None, auto_generate_filename: bool = True) -> Tuple[Pipeline, str, Dict[str, float], Dict]:
     "Generate a single pipeline using K attempts"
     log = {
         "algorithm": "single_generation",
@@ -194,8 +198,15 @@ class AutoML_Bot(Ollama_ChatBot):
       log["final_metrics"] = eval_result.metrics
       log["attempts"].append(attempt_log)
 
-      if save_log_path:
-        self._save_execution_log(log, save_log_path)
+      if save_result_path is not None or auto_generate_filename:
+        # Crear diccionario de resultados
+        extra = {"k_repair": k_repair, "add_reasoning": add_reasoning}
+        result_dict = self._create_result_dict(algorithm="single_generation", final_config=config_dict, final_metrics=eval_result.metrics, final_reasoning=reasoning, attempts_log=log['attempts'], extra=extra)
+        # Si save_result_path is None, auto-genera; si es string, lo usa
+        output_path = save_result_path if save_result_path else None
+        if auto_generate_filename and output_path is None:
+          output_path = None  # Activa generación automática
+        self._save_result(result_dict, output_path)
 
       return pipeline, reasoning, eval_result.metrics, config_dict
 
@@ -204,7 +215,8 @@ class AutoML_Bot(Ollama_ChatBot):
       self._save_execution_log(log, save_log_path)
     raise RuntimeError("No se pudo generar un pipeline funcional")
 
-  def generate_pipelines_with_optimization(self, target_metric: str = 'accuracy_mean', add_reasoning: bool = True, max_iterations: int = 10, max_history_size: int = 5, k_repair: int = 3, save_log_path: Optional[str] = None, print_chat: bool = False) -> Tuple[Pipeline, str, Dict[str, float]]:
+  def generate_pipelines_with_optimization(self, target_metric: str = 'accuracy_mean', add_reasoning: bool = True, max_iterations: int = 10, max_history_size: int = 5, k_repair: int = 3,
+                                           save_log_path: Optional[str] = None, print_chat: bool = False, save_result_path: Optional[str] = None, auto_generate_filename: bool = True) -> Tuple[Pipeline, str, Dict[str, float]]:
     "Iteratively improve a pipeline using the LLM as optimiser"
     log = {
         "algorithm": "optimization",
@@ -344,8 +356,32 @@ class AutoML_Bot(Ollama_ChatBot):
     log["final_best_metrics"] = best_metrics
     log["final_best_reasoning"] = final_reasoning
 
-    if save_log_path:
-      self._save_execution_log(log, save_log_path)
+    if save_result_path is not None or auto_generate_filename:
+      extra = {
+          "target_metric": target_metric,
+          "max_iterations": max_iterations,
+          "max_history_size": max_history_size,
+          "k_repair": k_repair,
+          "iterations": log["iterations"]   # historial detallado de cada iteración
+      }
+      # best_config hay que recuperarlo; se puede obtener del mejor pipeline
+      # reconstruyendo a partir del JSON guardado en history[-1] (el mejor está al final)
+      best_config = None
+      if history:
+        best_config = history[-1]["config"]   # asumiendo que history se ordena con mejor al final
+      result_dict = self._create_result_dict(
+          algorithm="optimization",
+          final_config=best_config,
+          final_metrics=best_metrics,
+          final_reasoning=final_reasoning,
+          attempts_log=[],   # no aplica directamente, los intentos están dentro de cada iteración
+          extra=extra
+      )
+      # Añadir los intentos dentro de cada iteración ya está en extra["iterations"]
+      output_path = save_result_path if save_result_path else None
+      if auto_generate_filename and output_path is None:
+        output_path = None
+      self._save_result(result_dict, output_path)
 
     return best_pipeline, final_reasoning, best_metrics
 
@@ -438,4 +474,69 @@ class AutoML_Bot(Ollama_ChatBot):
     with open(filepath, 'w', encoding='utf-8') as f:
       json.dump(sanitized, f, indent=2, ensure_ascii=False)
     ok(f"Log saved to {filepath}")
+    return str(filepath)
+
+  def _create_result_dict(self, algorithm: str, final_config: Dict, final_metrics: Dict[str, float], final_reasoning: str, attempts_log: List[Dict], extra: Dict = None) -> Dict:
+    from datetime import datetime
+    import base64
+
+    result = {
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "algorithm": algorithm,
+        "bot_config": {
+            "model": self.model,
+            "host": self.host,
+            "task_description": self.task_description,
+            "cv_folds": self.cv_folds,
+            "verbose": self.verbose,
+            "system_prompt": self.system_prompt[:2000] + ("..." if len(self.system_prompt) > 2000 else "")
+        },
+        "llm_config": {
+            "model": self.model,
+            "host": self.host,
+            "stream": self.stream
+        },
+        "dataset": {
+            "dataset_id": self.dataset_info.get("dataset_id") if self.dataset_info else None,
+            "target_column": self.target_column,
+            "anonymized_columns": self.columns_info,   # mapeo alias -> original
+            "dataset_info": self.dataset_info,
+            "shape": self.dataset.shape if self.dataset is not None else None,
+            "columns": list(self.dataset.columns) if self.dataset is not None else [],
+            "sample_data": self.dataset.head(3).to_dict(orient="records") if self.dataset is not None else [],
+            "csv_path": str(self.dataset_info.get("csv_path")) if self.dataset_info and "csv_path" in self.dataset_info else None,
+            "meta_features": self.dataset_info.get("meta-features") if self.dataset_info else None,
+        },
+        "execution_params": extra or {},
+        "result": {
+            "success": True,
+            "final_config": final_config,
+            "final_metrics": final_metrics,
+            "final_reasoning": final_reasoning,
+            "attempts": attempts_log
+        }
+    }
+    # Añadir campo iterations si es optimización y se pasaron
+    if extra and "iterations" in extra:
+      result["result"]["iterations"] = extra["iterations"]
+    return result
+
+  def _save_result(self, result_dict: Dict, filename: Optional[str] = None) -> str:
+    from datetime import datetime
+    import json
+    from pathlib import Path
+
+    if filename is None:
+      dataset_id = result_dict["dataset"]["dataset_id"] or "unknown"
+      timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+      filename = f"result_{dataset_id}_{timestamp}.json"
+
+    filepath = Path(filename)
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+
+    sanitized = self._sanitize_for_json(result_dict)
+    with open(filepath, "w", encoding="utf-8") as f:
+      json.dump(sanitized, f, indent=2, ensure_ascii=False)
+
+    ok(f"Resultado completo guardado en {filepath}")
     return str(filepath)

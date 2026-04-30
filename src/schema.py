@@ -15,7 +15,6 @@ from sklearn.metrics import accuracy_score
 
 from src.file_handling import load_sklearn_map
 
-# Constants
 JSON_EXAMPLE = """
 {
   "steps": [
@@ -189,18 +188,17 @@ class ParseResult:
   errors: list[str] = field(default_factory=list)
   warnings: list[str] = field(default_factory=list)
 
-  def to_feedback(self, add_warning: bool = True) -> str:
+  def to_feedback(self, add_warning: bool = False) -> str:
     if self.success:
       return "[SUCCESS] Pipeline parseado correctamente."
     lines = ["[ERROR] Errores al parsear el pipeline:"]
     for e in self.errors:
-      lines.append(f"- {e}")
+      lines.append(f"{e}")
     if self.warnings and add_warning:
       lines.append("[WARNING] Advertencias:")
       for w in self.warnings:
-        lines.append(f"- {w}")
-    lines.append("\nFormato esperado (JSON):\n" + JSON_EXAMPLE)
-    return "\n".join(lines)
+        lines.append(f"{w}")
+    return " | ".join(lines)
 
 @dataclass
 class EvaluationResult:
@@ -209,7 +207,7 @@ class EvaluationResult:
   errors: list[str] = field(default_factory=list)
   warnings: list[str] = field(default_factory=list)
 
-  def to_feedback(self, add_warning: bool = True) -> str:
+  def to_feedback(self, add_warning: bool = False) -> str:
     if self.success:
       lines = ["[SUCCESS] Pipeline evaluado correctamente."]
       lines.append("[RESULTS] Métricas obtenidas:")
@@ -218,12 +216,12 @@ class EvaluationResult:
       return "\n".join(lines)
     lines = ["[ERROR] Errores al evaluar el pipeline:"]
     for e in self.errors:
-      lines.append(f"- {e}")
+      lines.append(f"{e}")
     if self.warnings and add_warning:
       lines.append("[WARNING] Advertencias:")
       for w in self.warnings:
         lines.append(f"- {w}")
-    return "\n".join(lines)
+    return " | ".join(lines)
 
 def _extract_json_from_text(text: str) -> dict | None:
   md_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
@@ -562,8 +560,19 @@ def evaluate_pipeline(pipeline: Pipeline, X: np.ndarray, y: np.ndarray, *, cv: i
       metrics[metric + "_mean"] = float(np.mean(scores))
       metrics[metric + "_std"] = float(np.std(scores))
     except Exception as exc:
-      tb = traceback.format_exc()
-      errors.append(f"Error al calcular '{metric}' con cross_val_score: {exc}\n{tb}")
+      error_msg = str(exc)
+      # Si es el error típico de "All the 5 fits failed", intentamos extraer la causa raíz
+      if "All the" in error_msg and "fits failed" in error_msg:
+        # Buscar la línea del ValueError original dentro del mensaje
+        lines = error_msg.splitlines()
+        for line in lines:
+          if "ValueError:" in line or "TypeError:" in line or "KeyError:" in line:
+            error_msg = line.strip()
+            break
+      # Limitar longitud para no saturar el prompt
+      if len(error_msg) > 500:
+        error_msg = error_msg[:250] + "..." + error_msg[-250:]
+      errors.append(f"Error al calcular '{metric}' con cross_val_score: {error_msg}")
 
   if errors:
     return EvaluationResult(success=False, metrics=metrics, errors=errors, warnings=warnings)
@@ -571,8 +580,8 @@ def evaluate_pipeline(pipeline: Pipeline, X: np.ndarray, y: np.ndarray, *, cv: i
   try:
     pipeline.fit(X, y)
   except Exception as exc:
-    tb = traceback.format_exc()
-    errors.append(f"Error al hacer fit del pipeline en el dataset completo: {exc}\n{tb}")
+    error_msg = str(exc)[:500]
+    errors.append(f"Error al hacer fit del pipeline en el dataset completo: {error_msg}")
     return EvaluationResult(success=False, metrics=metrics, errors=errors, warnings=warnings)
 
   try:
@@ -607,9 +616,7 @@ class MLPipelineGenerator:
 REGLAS ESTRICTAS:
 1. Solo puedes usar los componentes listados abajo.
 2. Los hiperparámetros deben estar dentro de los rangos o valores permitidos.
-3. El pipeline debe tener exactamente 1 clasificador (al final).
-4. El orden debe ser: [preprocessor*] → [feature_selection?] → classifier
-5. Responde ÚNICAMENTE con un bloque JSON válido con la clave "steps".
+3. Responde ÚNICAMENTE con un bloque JSON válido con la clave "steps".
 
 COMPONENTES DISPONIBLES Y SUS RESTRICCIONES:
 {components_doc}
