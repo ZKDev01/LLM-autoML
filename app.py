@@ -3,13 +3,9 @@ import json
 from src.terminal_tools import *
 
 AVAILABLE_MODELS = {
-    "1": ("gemini-3-flash-preview", "Gemini 3 Flash Preview"),
-    "2": ("gpt-oss:120b", "GPT-OSS 120B"),
-    "3": ("gpt-oss:20b", "GPT-OSS 20B"),
-    "4": ("kimi-k2-thinking", "Kimi K2 Thinking"),
-    "5": ("mistral-large-3:675b", "Mistral Large 3"),
-    "6": ("qwen3-coder-next", "Qwen3 Coder Next"),
-    "7": ("qwen3-coder:480b", "Qwen3 Coder 480B"),
+    "1": ("gpt-oss:120b", "GPT-OSS 120B"),
+    "2": ("gpt-oss:20b", "GPT-OSS 20B"),
+    "3": ("qwen3-coder:480b", "Qwen3 Coder 480B"),
 }
 
 def test_simulation_of_pipeline_generation() -> None:
