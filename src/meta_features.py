@@ -42,7 +42,7 @@ def compute_meta_features(X: pd.DataFrame, y: str, y_data_type: str = 'nominal',
   num_instances = X.shape[0]
 
   # Calcular Meta-Feature: Número de características
-  num_instances = X.shape[1] - 1  # Restar la columna objetivo
+  num_features = X.shape[1] - 1  # Restar la columna objetivo
 
   # Calcular Meta-Feature: Número de clases
   if y_data_type == 'nominal':
@@ -83,7 +83,7 @@ def compute_meta_features(X: pd.DataFrame, y: str, y_data_type: str = 'nominal',
 
   return {
       "Number of Instances": num_instances,
-      "Number of Features": num_instances,
+      "Number of Features": num_features,
       "Number of Classes": num_classes,
       "Class Proportions": class_proportions,
       "Number of Missing Values": num_missing_values,

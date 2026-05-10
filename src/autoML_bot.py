@@ -1,4 +1,3 @@
-import re
 import json
 from pathlib import Path
 from typing import Dict, Tuple, Optional, Any, List
@@ -11,7 +10,9 @@ from src.terminal_tools import *
 from src.chatbot import Ollama_ChatBot
 from src.meta_features import compute_meta_features
 from src.openml_manager import OpenMLManager
-from src.schema import MLPipelineGenerator, parse_llm_response_to_pipeline, evaluate_pipeline, _extract_json_from_text
+from src.schema import MLPipelineGenerator                              # sigue importado para generar el prompt
+from src.pipeline_generator import parse_and_build, evaluate_pipeline, extract_json_candidates
+
 
 class AutoML_Bot(Ollama_ChatBot):
   "AutoML using an LLM to generate pipelines"
@@ -31,7 +32,7 @@ class AutoML_Bot(Ollama_ChatBot):
     self.columns_info: Optional[Dict[str, Any]] = None
     self.dataset_info_text: Optional[str] = None
 
-    # Build the system prompt using the new generator
+    # Build the system prompt using the generator from src.schema
     self.generator = MLPipelineGenerator()
     system_prompt = self.generator.generate_prompt()
     self.system_prompt = system_prompt
@@ -53,10 +54,8 @@ class AutoML_Bot(Ollama_ChatBot):
     if self.dataset is None:
       fail("Dataset not loaded")
       return False, "Dataset not loaded"
-
     if self.verbose:
       header(" [ANONYMIZE COLUMNS]")
-
     try:
       rename_map = {}
       col_mapping = {}
@@ -83,7 +82,6 @@ class AutoML_Bot(Ollama_ChatBot):
       return False, str(e)
 
   def build_dataset_info(self, k_examples: int = 0, include_anonymize_columns: bool = True, include_meta_features: bool = True) -> Tuple[bool, str]:
-    "Construct a natural-language description of the dataset for the LLM."
     if include_anonymize_columns:
       result, _ = self.anonymize_columns()
       if not result:
@@ -110,15 +108,12 @@ class AutoML_Bot(Ollama_ChatBot):
     return True, dataset_info_text
 
   def prepare_for_llm(self, k_examples: int = 0, include_anonymize_columns: bool = True) -> Tuple[bool, str]:
-    "Final preparation before calling the LLM. The system prompt (with allowed components) is already in place. Here we build the user-visible dataset description."
-
     success, msg = self.build_dataset_info(k_examples=k_examples, include_anonymize_columns=include_anonymize_columns, include_meta_features=True)
     if not success:
       return False, f"build_dataset_info failed: {msg}"
     return True, "Ready for LLM"
 
   def _user_prompt(self, error_msg: str = "") -> str:
-    "Base user prompt with the dataset description and optional error feedback."
     base = f"{self.dataset_info_text}\n\nGenera una propuesta de pipeline de clasificación para este dataset."
     if error_msg:
       base += f"\n\nEl pipeline anterior falló con los siguientes errores:\n{error_msg}\nCorrígelos y responde con SOLO un JSON válido (sin markdown, ni bloques de código)"
@@ -152,8 +147,8 @@ class AutoML_Bot(Ollama_ChatBot):
       if print_chat:
         print(f"\n[LLM Response]:\n{raw_text}\n")
 
-      # 1. Parse & Build
-      parse_result = parse_llm_response_to_pipeline(raw_text)
+      # 1. Parse & Build usando la nueva función de pipeline_generator
+      parse_result = parse_and_build(raw_text)
       attempt_log["parse_success"] = parse_result.success
       attempt_log["parse_errors"] = parse_result.errors
       attempt_log["parse_warnings"] = parse_result.warnings
@@ -161,13 +156,13 @@ class AutoML_Bot(Ollama_ChatBot):
       if not parse_result.success:
         error_msg = parse_result.to_feedback()
         fail(f"  [PARSE ERROR] {error_msg}")
-        prompt = self._user_prompt(error_msg)  # re‑prompt with error
+        prompt = self._user_prompt(error_msg)
         log["attempts"].append(attempt_log)
         continue
 
       pipeline = parse_result.pipeline
 
-      # 2. Evaluate
+      # 2. Evaluate usando la función de pipeline_generator
       eval_result = evaluate_pipeline(pipeline, X, y, cv=self.cv_folds, scoring=["accuracy"])
       attempt_log["eval_success"] = eval_result.success
       attempt_log["eval_errors"] = eval_result.errors
@@ -181,7 +176,7 @@ class AutoML_Bot(Ollama_ChatBot):
         log["attempts"].append(attempt_log)
         continue
 
-      # 3. Success – store config (the original JSON is best)
+      # 3. Success – store config (extrayendo el JSON original)
       config_dict = self._extract_steps_json(raw_text)
       attempt_log["config"] = config_dict
 
@@ -199,10 +194,8 @@ class AutoML_Bot(Ollama_ChatBot):
       log["attempts"].append(attempt_log)
 
       if save_result_path is not None or auto_generate_filename:
-        # Crear diccionario de resultados
         extra = {"k_repair": k_repair, "add_reasoning": add_reasoning}
         result_dict = self._create_result_dict(algorithm="single_generation", final_config=config_dict, final_metrics=eval_result.metrics, final_reasoning=reasoning, attempts_log=log['attempts'], extra=extra)
-        # Si save_result_path is None, auto-genera; si es string, lo usa
         output_path = save_result_path if save_result_path else None
         if auto_generate_filename and output_path is None:
           output_path = None  # Activa generación automática
@@ -215,8 +208,17 @@ class AutoML_Bot(Ollama_ChatBot):
       self._save_execution_log(log, save_log_path)
     raise RuntimeError("No se pudo generar un pipeline funcional")
 
-  def generate_pipelines_with_optimization(self, target_metric: str = 'accuracy_mean', add_reasoning: bool = True, max_iterations: int = 10, max_history_size: int = 5, k_repair: int = 3,
-                                           save_log_path: Optional[str] = None, print_chat: bool = False, save_result_path: Optional[str] = None, auto_generate_filename: bool = True) -> Tuple[Pipeline, str, Dict[str, float]]:
+  def generate_pipelines_with_optimization(
+      self,
+      target_metric: str = 'accuracy_mean',
+      add_reasoning: bool = True,
+      max_iterations: int = 10,
+      max_history_size: int = 5,
+      k_repair: int = 3,
+      save_log_path: Optional[str] = None, print_chat: bool = False,
+      save_result_path: Optional[str] = None,
+      auto_generate_filename: bool = True
+  ) -> Tuple[Pipeline, str, Dict[str, float]]:
     "Iteratively improve a pipeline using the LLM as optimiser"
     log = {
         "algorithm": "optimization",
@@ -231,7 +233,8 @@ class AutoML_Bot(Ollama_ChatBot):
 
     # 1. Generate a starting pipeline
     try:
-      _, _, _, initial_config = self.generate_pipelines(k_repair=k_repair, add_reasoning=add_reasoning, save_log_path=None, print_chat=print_chat)
+      _, _, _, initial_config = self.generate_pipelines(k_repair=k_repair, add_reasoning=add_reasoning,
+                                                        save_log_path=None, print_chat=print_chat)
     except Exception as e:
       log["error_initial"] = str(e)
       if save_log_path:
@@ -241,7 +244,7 @@ class AutoML_Bot(Ollama_ChatBot):
     # Evaluate initial to get metrics
     X = self.dataset.drop(columns=[self.target_column]).to_numpy()
     y = self.dataset[self.target_column].to_numpy()
-    pipeline_initial = self._build_from_config(initial_config)   # helper
+    pipeline_initial = self._build_from_config(initial_config)
     eval_init = evaluate_pipeline(pipeline_initial, X, y, cv=self.cv_folds)
     if not eval_init.success:
       raise RuntimeError("Initial pipeline evaluation failed")
@@ -278,7 +281,6 @@ class AutoML_Bot(Ollama_ChatBot):
           f"Responde SÓLO con el JSON válido."
       )
 
-      # Use the base dataset info as context
       full_prompt = f"{self.dataset_info_text}\n\n{meta_prompt}"
 
       # Repair loop inside each iteration
@@ -289,7 +291,7 @@ class AutoML_Bot(Ollama_ChatBot):
         response = self.chat(full_prompt)
         raw_text = response.message.content
 
-        parse_result = parse_llm_response_to_pipeline(raw_text)
+        parse_result = parse_and_build(raw_text)
         if not parse_result.success:
           full_prompt = self._user_prompt(parse_result.to_feedback())
           iter_log["attempts"].append(attempt_log)
@@ -362,22 +364,17 @@ class AutoML_Bot(Ollama_ChatBot):
           "max_iterations": max_iterations,
           "max_history_size": max_history_size,
           "k_repair": k_repair,
-          "iterations": log["iterations"]   # historial detallado de cada iteración
+          "iterations": log["iterations"]
       }
-      # best_config hay que recuperarlo; se puede obtener del mejor pipeline
-      # reconstruyendo a partir del JSON guardado en history[-1] (el mejor está al final)
-      best_config = None
-      if history:
-        best_config = history[-1]["config"]   # asumiendo que history se ordena con mejor al final
+      best_config = history[-1]["config"] if history else None
       result_dict = self._create_result_dict(
           algorithm="optimization",
           final_config=best_config,
           final_metrics=best_metrics,
           final_reasoning=final_reasoning,
-          attempts_log=[],   # no aplica directamente, los intentos están dentro de cada iteración
+          attempts_log=[],
           extra=extra
       )
-      # Añadir los intentos dentro de cada iteración ya está en extra["iterations"]
       output_path = save_result_path if save_result_path else None
       if auto_generate_filename and output_path is None:
         output_path = None
@@ -386,23 +383,22 @@ class AutoML_Bot(Ollama_ChatBot):
     return best_pipeline, final_reasoning, best_metrics
 
   def _extract_steps_json(self, llm_text: str) -> dict:
-    "Extract the original JSON config from the LLM response (same as schema does)."
-    data = _extract_json_from_text(llm_text)
-    if data is None:
-      raise ValueError("No JSON found in LLM response")
-    return data
+    "Extrae el primer JSON con clave 'steps' usando las funciones de pipeline_generator"
+    candidates = extract_json_candidates(llm_text)
+    for cand in candidates:
+      if isinstance(cand, dict) and "steps" in cand:
+        return cand
+    raise ValueError("No JSON with 'steps' found in LLM response")
 
   def _build_from_config(self, config: dict) -> Pipeline:
-    "Re-build a Pipeline from a config dict (needed for the initial pipeline in optimisation). We simply re-parse the config as if it were an LLM response."
-    # Simulate a response by serialising the dict back to a string
+    "Re-build a Pipeline from a config dict (needed for the initial pipeline in optimisation)."
     raw = json.dumps(config)
-    parse_result = parse_llm_response_to_pipeline(raw)
+    parse_result = parse_and_build(raw)
     if not parse_result.success:
       raise ValueError(f"Cannot rebuild pipeline: {parse_result.errors}")
     return parse_result.pipeline
 
   def _generate_reasoning(self, config: dict, metrics: Dict[str, float]) -> str:
-    "Ask the LLM to explain why this pipeline works."
     prompt = (
         f"Pipeline: {json.dumps(config, indent=2)}\n"
         f"Métricas: {json.dumps(metrics, indent=2)}\n\n"
@@ -413,7 +409,6 @@ class AutoML_Bot(Ollama_ChatBot):
     return response.message.content
 
   def _generate_final_reasoning(self, history: list, best_metrics: dict, metric: str) -> str:
-    "Summarise the whole optimisation journey."
     lines = [f"{h['metrics'][metric]:.4f}" for h in history]
     prompt = (
         f"Evolución de {metric}: {lines}\n"
@@ -424,7 +419,6 @@ class AutoML_Bot(Ollama_ChatBot):
     return response.message.content
 
   def _format_history_for_prompt(self, sorted_history: list) -> str:
-    "Format the history list (worst -> best) into a concise string."
     parts = []
     for idx, entry in enumerate(sorted_history, 1):
       acc = entry['metrics'].get('accuracy_mean', 'N/A')
@@ -463,7 +457,6 @@ class AutoML_Bot(Ollama_ChatBot):
 
   def _save_execution_log(self, log_data: dict, filename: Optional[str] = None) -> str:
     sanitized = self._sanitize_for_json(log_data)
-
     from datetime import datetime
 
     if filename is None:
@@ -499,7 +492,7 @@ class AutoML_Bot(Ollama_ChatBot):
         "dataset": {
             "dataset_id": self.dataset_info.get("dataset_id") if self.dataset_info else None,
             "target_column": self.target_column,
-            "anonymized_columns": self.columns_info,   # mapeo alias -> original
+            "anonymized_columns": self.columns_info,
             "dataset_info": self.dataset_info,
             "shape": self.dataset.shape if self.dataset is not None else None,
             "columns": list(self.dataset.columns) if self.dataset is not None else [],
@@ -516,7 +509,6 @@ class AutoML_Bot(Ollama_ChatBot):
             "attempts": attempts_log
         }
     }
-    # Añadir campo iterations si es optimización y se pasaron
     if extra and "iterations" in extra:
       result["result"]["iterations"] = extra["iterations"]
     return result

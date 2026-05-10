@@ -54,7 +54,10 @@ class Ollama_ChatBot:
     if api_key:
       headers["Authorization"] = f"Bearer {api_key}"
 
-    self._client = Client(host=self.host, headers=headers)
+    if self.model == "deepseek-r1:1.5b":
+      self._client = Client()
+    else:
+      self._client = Client(host=self.host, headers=headers)
 
   def chat(self, user_input: str) -> ChatResponse:
     self._messages.append(Message(role="user", content=user_input))

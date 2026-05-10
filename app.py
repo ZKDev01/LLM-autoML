@@ -6,6 +6,7 @@ AVAILABLE_MODELS = {
     "1": ("gpt-oss:120b", "GPT-OSS 120B"),
     "2": ("gpt-oss:20b", "GPT-OSS 20B"),
     "3": ("qwen3-coder:480b", "Qwen3 Coder 480B"),
+    "4": ("deepseek-r1:1.5b", "Deepseek-R1 1.5B (Lightweight)")
 }
 
 def test_simulation_of_pipeline_generation() -> None:
