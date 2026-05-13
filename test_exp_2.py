@@ -4,15 +4,14 @@ from src.autoML_bot import AutoML_Bot
 bot = AutoML_Bot(
     stream=True,
     task_description="classification",
-    cv_folds=5,
-    verbose=True
+    cv_folds=5
 )
 
 # 2. Cargar un dataset de prueba (iris, ID 61 en OpenML)
 bot.load_dataset_from_openml(dataset_id=61)
 
 # 3. Preparar la descripción para el LLM
-bot.prepare_for_llm(k_examples=5, include_anonymize_columns=True)
+bot.prepare_for_llm(k_examples=0, include_anonymize_columns=True)
 
 # 4. Ejecutar optimización iterativa
 best_pipeline, final_reasoning, best_metrics = bot.generate_pipelines_with_optimization(
@@ -21,7 +20,6 @@ best_pipeline, final_reasoning, best_metrics = bot.generate_pipelines_with_optim
     max_history_size=5,              # cuántos pipelines pasados recordar
     k_repair=3,                      # intentos de reparación por iteración
     add_reasoning=True,              # que explique sus decisiones
-    print_chat=True,                 # muestra la respuesta cruda del LLM
     save_result_path="result_reasoning.json"
 )
 

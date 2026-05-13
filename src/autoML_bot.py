@@ -8,7 +8,11 @@ from sklearn.pipeline import Pipeline
 
 from src.terminal_tools import *
 from src.chatbot import Ollama_ChatBot
-from src.meta_features import compute_meta_features
+from src.meta_features import (
+    compute_meta_features,
+    compute_all_meta_feats,
+    format_meta_feats_text
+)
 from src.openml_manager import OpenMLManager
 from src.schema import MLPipelineGenerator                              # sigue importado para generar el prompt
 from src.pipeline_generator import parse_and_build, evaluate_pipeline, extract_json_candidates
@@ -91,12 +95,13 @@ class AutoML_Bot(Ollama_ChatBot):
     columns_text = ', '.join(col_list)
 
     if include_meta_features:
-      meta = compute_meta_features(self.dataset, self.target_column)
+      meta = compute_all_meta_feats(self.dataset, self.target_column)
       self.dataset_info['meta-features'] = meta
     else:
       meta = self.dataset_info.get('meta-features', {})
 
-    dataset_info_text = (f"Información del dataset\nColumns: {columns_text}\nMeta-Features:\n{str(meta)}")
+    meta_feats_text = format_meta_feats_text(meta)
+    dataset_info_text = (f"Información del dataset\nColumns: {columns_text}\nMeta-Features:\n{meta_feats_text}")
 
     if k_examples > 0:
       dataset_info_text += f"\nPrimeros {k_examples} datos:\n{self.dataset.head(k_examples)}"
