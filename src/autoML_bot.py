@@ -14,20 +14,21 @@ from src.meta_features import (
     format_meta_feats_text
 )
 from src.openml_manager import OpenMLManager
-from src.schema import MLPipelineGenerator                              # sigue importado para generar el prompt
-from src.pipeline_generator import parse_and_build, evaluate_pipeline, extract_json_candidates
+from src.schema import MLPipelineGenerator
+from src.pipeline_generator import parse_and_build, evaluate_pipeline, extract_json_candidates, parse_and_build_simple
 
 
 class AutoML_Bot(Ollama_ChatBot):
   "AutoML using an LLM to generate pipelines"
 
-  def __init__(self, model: str | None = None, host: str | None = None, stream: bool = True, task_description: str = "classification", cv_folds: int = 5, verbose: bool = False) -> None:
+  def __init__(self, model: str | None = None, host: str | None = None, stream: bool = True, task_description: str = "classification", cv_folds: int = 5, verbose: bool = False, include_schema_in_prompt: bool = True) -> None:
     self.task_description = task_description
     self.cv_folds = cv_folds
     self.verbose = verbose
     self.model = model
     self.host = host
     self.stream = stream
+    self.include_schema_in_prompt = include_schema_in_prompt
 
     # Dataset attributes
     self.dataset: Optional[pd.DataFrame] = None
@@ -36,9 +37,19 @@ class AutoML_Bot(Ollama_ChatBot):
     self.columns_info: Optional[Dict[str, Any]] = None
     self.dataset_info_text: Optional[str] = None
 
-    # Build the system prompt using the generator from src.schema
-    self.generator = MLPipelineGenerator()
-    system_prompt = self.generator.generate_prompt()
+    if include_schema_in_prompt:
+      self.generator = MLPipelineGenerator()
+      system_prompt = self.generator.generate_prompt()
+    else:
+      system_prompt = (
+          "Eres un asistente de AutoML. Tu tarea es generar pipelines de scikit-learn "
+          "en formato JSON con la siguiente estructura exacta:\n"
+          "{\"steps\": [{\"name\": \"nombre_paso\", \"component\": \"NombreComponente\", "
+          "\"hyperparameters\": {\"param1\": valor1, ...}}, ...]}\n"
+          "No incluyas texto adicional, solo el JSON válido. "
+          "Usa nombres de componentes válidos de scikit-learn (por ejemplo, "
+          "StandardScaler, RandomForestClassifier, etc.)."
+      )
     self.system_prompt = system_prompt
 
     # Initialise the underlying chatbot
@@ -123,6 +134,84 @@ class AutoML_Bot(Ollama_ChatBot):
     if error_msg:
       base += f"\n\nEl pipeline anterior falló con los siguientes errores:\n{error_msg}\nCorrígelos y responde con SOLO un JSON válido (sin markdown, ni bloques de código)"
     return base
+
+  def _user_prompt_simple(self, error_msg: str = "") -> str:
+    base = f"{self.dataset_info_text}\n\nGenera una propuesta de pipeline de clasificación para este dataset en formato JSON (clave 'steps')."
+    if error_msg:
+      base += f"\n\nEl pipeline anterior falló. Motivo: {error_msg}\nCorrígelo y responde con SOLO un JSON válido."
+    return base
+
+  def generate_pipelines_simple(self, k_repair: int = 3, add_reasoning: bool = True, print_chat: bool = False, save_result_path: Optional[str] = None, auto_generate_filename: bool = True) -> Tuple[Pipeline, str, Dict[str, float], Dict]:
+    "Genera un pipeline sin usar el componente de validación estricta"
+    if self.dataset is None:
+      raise RuntimeError("Dataset not loaded")
+
+    X = self.dataset.drop(columns=[self.target_column]).to_numpy()
+    y = self.dataset[self.target_column].to_numpy()
+
+    prompt = self._user_prompt_simple()
+    log = {"mode": "simple", "attempts": []}
+
+    for attempt in range(1, k_repair + 1):
+      header(f"    [SIMPLE ATTEMPT {attempt}]")
+      attempt_log = {"attempt": attempt}
+
+      response = self.chat(prompt)
+      raw_text = response.message.content
+
+      if print_chat:
+        print(f"\n[LLM Response]:\n{raw_text}\n")
+
+      parse_result = parse_and_build_simple(raw_text)
+      attempt_log["parse_success"] = parse_result.success
+      attempt_log["parse_errors"] = parse_result.errors
+
+      if not parse_result.success:
+        error_msg = parse_result.errors[0] if parse_result.errors else "Formato JSON inválido."
+        fail(f"  [PARSE ERROR] {error_msg}")
+        prompt = self._user_prompt_simple(f"Error de formato: {error_msg}")
+        log["attempts"].append(attempt_log)
+        continue
+
+      pipeline = parse_result.pipeline
+
+      eval_result = evaluate_pipeline(pipeline, X, y, cv=self.cv_folds, scoring=["accuracy"])
+      attempt_log["eval_success"] = eval_result.success
+      attempt_log["eval_errors"] = eval_result.errors
+      attempt_log["metrics"] = eval_result.metrics
+
+      if not eval_result.success:
+        error_text = eval_result.errors[0] if eval_result.errors else "Error desconocido en evaluación."
+        fail(f"  [EVAL ERROR] {error_text}")
+        prompt = self._user_prompt_simple(f"Error durante la evaluación: {error_text}")
+        log["attempts"].append(attempt_log)
+        continue
+
+      config_dict = self._extract_steps_json(raw_text)
+      attempt_log["config"] = config_dict
+
+      reasoning = ""
+      if add_reasoning:
+        reasoning = self._generate_reasoning(config_dict, eval_result.metrics)
+        attempt_log["reasoning"] = reasoning
+        log["final_reasoning"] = reasoning
+
+      log["success"] = True
+      log["final_config"] = config_dict
+      log["final_metrics"] = eval_result.metrics
+      log["attempts"].append(attempt_log)
+
+      if save_result_path is not None or auto_generate_filename:
+        extra = {"mode": "simple", "k_repair": k_repair, "add_reasoning": add_reasoning}
+        result_dict = self._create_result_dict(algorithm="simple_generation", final_config=config_dict, final_metrics=eval_result.metrics, final_reasoning=reasoning, attempts_log=log['attempts'], extra=extra)
+        output_path = save_result_path if save_result_path else None
+        if auto_generate_filename and output_path is None:
+          output_path = None
+        self._save_result(result_dict, output_path)
+
+      return pipeline, reasoning, eval_result.metrics, config_dict
+
+    raise RuntimeError("No se pudo generar un pipeline funcional en modo simple.")
 
   def generate_pipelines(self, k_repair: int = 3, add_reasoning: bool = True, save_log_path: Optional[str] = None, print_chat: bool = False, save_result_path: Optional[str] = None, auto_generate_filename: bool = True) -> Tuple[Pipeline, str, Dict[str, float], Dict]:
     "Generate a single pipeline using K attempts"
@@ -238,8 +327,7 @@ class AutoML_Bot(Ollama_ChatBot):
 
     # 1. Generate a starting pipeline
     try:
-      _, _, _, initial_config = self.generate_pipelines(k_repair=k_repair, add_reasoning=add_reasoning,
-                                                        save_log_path=None, print_chat=print_chat)
+      _, _, _, initial_config = self.generate_pipelines(k_repair=k_repair, add_reasoning=add_reasoning, save_log_path=None, print_chat=print_chat)
     except Exception as e:
       log["error_initial"] = str(e)
       if save_log_path:

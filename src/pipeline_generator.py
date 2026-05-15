@@ -657,3 +657,90 @@ def parse_and_build(llm_response: str) -> ParseResult:
   feedback = "Ningún candidato pudo convertirse en un pipeline válido.\n"
   feedback += "Fallos detectados:\n" + "\n".join(all_errors)
   return ParseResult(success=False, errors=[feedback], warnings=warnings_list)
+
+
+def _build_step_simple(step_dict: dict) -> Tuple[str, Any]:
+  "Construye un paso de pipeline a partir de un diccionario, sin validar hiperparámetro ni componentes. Solo falla si la clase no existe o la instanciación lanza una excepción."
+  name = step_dict.get("name")
+  if not name or not isinstance(name, str):
+    raise ValueError("Cada paso debe tener una clave 'name' (string).")
+
+  component_name = step_dict.get("component")
+  if not component_name or not isinstance(component_name, str):
+    raise ValueError(f"Paso '{name}': falta la clave 'component' (string).")
+
+  hyperparams = step_dict.get("hyperparameters", {})
+  if not isinstance(hyperparams, dict):
+    raise ValueError(f"Paso '{name}': 'hyperparameters' debe ser un objeto.")
+
+  cls = None
+  if component_name in ALLOWED_COMPONENTS:
+    cls = ALLOWED_COMPONENTS[component_name]["class"]
+  else:
+    raise ValueError(f"Componente '{component_name}' no soportado en modo simple.")
+
+  if component_name == "ColumnTransformer" and "transformers" in hyperparams:
+    transformers_raw = hyperparams["transformers"]
+    built_transformers = []
+    for tf_dict in transformers_raw:
+      sub_name = tf_dict["name"]
+      sub_comp = tf_dict["transformer"]
+      if sub_comp in ("drop", "passthrough"):
+        transformer_obj = sub_comp
+      else:
+        _, transformer_obj = _build_step_simple({
+            "name": sub_name,
+            "component": sub_comp,
+            "hyperparameters": tf_dict.get("transformer_hyperparameters", {})
+        })
+      columns = tf_dict["columns"]
+      built_transformers.append((sub_name, transformer_obj, columns))
+    hyperparams["transformers"] = built_transformers
+
+  try:
+    estimator = cls(**hyperparams)
+  except Exception as e:
+    raise type(e)(f"Error al instanciar '{component_name}': {e}")
+
+  return name, estimator
+
+def parse_and_build_simple(llm_response: str) -> ParseResult:
+  "Extrae JSON candidatos y construye el primer pipeline que sea instanciable, sin validar contra ALLOWED_COMPONENTS más allá de la existencia de la clase. Devuelve errores mínimos."
+  candidates = extract_json_candidates(llm_response)
+  if not candidates:
+    return ParseResult(success=False, errors=["No se encontró JSON válido en la respuesta."])
+
+  all_errors = []
+  for idx, cand in enumerate(candidates, 1):
+    if not isinstance(cand, dict) or "steps" not in cand:
+      all_errors.append(f"Candidato {idx}: falta la clave 'steps'.")
+      continue
+
+    steps_data = cand["steps"]
+    if not isinstance(steps_data, list) or len(steps_data) == 0:
+      all_errors.append(f"Candidato {idx}: 'steps' debe ser una lista no vacía.")
+      continue
+
+    steps = []
+    failed = False
+    for j, step_dict in enumerate(steps_data):
+      try:
+        name, est = _build_step_simple(step_dict)
+        steps.append((name, est))
+      except Exception as e:
+        all_errors.append(f"Candidato {idx}, paso {j + 1}: {e}")
+        failed = True
+        break
+
+    if failed:
+      continue
+
+    try:
+      pipeline = Pipeline(steps)
+    except Exception as e:
+      all_errors.append(f"Candidato {idx}: error al construir Pipeline: {e}")
+      continue
+
+    return ParseResult(success=True, pipeline=pipeline, errors=[], warnings=[])
+
+  return ParseResult(success=False, errors=all_errors)
